@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>BanDaliSIMS License Manager</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 20px; background: #f4f6f8; color: #333; }
+    .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    input, button, select { padding: 8px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background-color: #2c3e50; color: white; }
+    .status-active { color: #27ae60; font-weight: bold; }
+    .status-revoked { color: #c0392b; font-weight: bold; }
+    .card { background: #eef2f5; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
+    .hidden { display: none !important; }
+    
+    /* Login Overlay Styles */
+    #loginOverlay {
+      max-width: 400px;
+      margin: 100px auto;
+      padding: 30px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      text-align: center;
+    }
+    #loginOverlay input { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 12px; font-size: 14px; }
+    #loginOverlay button { width: 100%; padding: 10px; background: #2c3e50; color: white; font-weight: bold; border: none; cursor: pointer; }
+    #loginOverlay button:hover { background: #34495e; }
+    #loginError { color: #c0392b; font-size: 13px; margin-top: 10px; min-height: 18px; }
+  </style>
+</head>
+<body>
+
+  <!-- Password Login Overlay -->
+  <div id="loginOverlay">
+    <h3>BanDaliSIMS Admin</h3>
+    <p style="font-size: 13px; color: #666;">Enter your secure master password to access the panel.</p>
+    <input type="password" id="adminPass" placeholder="Master Password" onkeydown="if(event.key==='Enter') attemptLogin()">
+    <button onclick="attemptLogin()">Unlock Dashboard</button>
+    <div id="loginError"></div>
+  </div>
+
+  <!-- Main Admin Dashboard (Hidden until authenticated) -->
+  <div id="adminContent" class="container hidden">
+    <h2>BanDaliSIMS License Manager</h2>
+    
+    <div class="card">
+      <h4>1. GitHub API Configuration</h4>
+      <input type="password" id="ghToken" placeholder="GitHub Personal Access Token" style="width:70%;">
+      <input type="text" id="repoPath" placeholder="username/repo-name" value="YOUR_USER/YOUR_REPO" style="width:70%;">
+      <button onclick="loadLicenses()">Connect & Load Licenses</button>
+    </div>
+
+    <div class="card">
+      <h4>2. Add / Update License</h4>
+      <input type="email" id="newEmail" placeholder="User Email">
+      <input type="text" id="newKey" placeholder="License Key Token">
+      <input type="date" id="newExpiry">
+      <button onclick="saveLicense()">Save License</button>
+    </div>
+
+    <h3>Active Registry</h3>
+    <table id="licenseTable">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Key</th>
+          <th>Expires</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Loaded dynamically -->
+      </tbody>
+    </table>
+  </div>
+
+<script>
+  // REPLACE THIS HASH with the SHA-256 hash of your actual password generated via browser console.
+  // Current placeholder hash is set for the password: "password123"
+  const CORRECT_HASH = "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f";
+
+  async function attemptLogin() {
+    const input = document.getElementById('adminPass').value;
+    const msg = document.getElementById('loginError');
+    
+    const encoder = new TextEncoder();
+    const data = encoder.encode(input);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (hashHex === CORRECT_HASH) {
+      document.getElementById('loginOverlay').classList.add('hidden');
+      document.getElementById('adminContent').classList.remove('hidden');
+      sessionStorage.setItem('authed', 'true');
+    } else {
+      msg.textContent = "Incorrect password. Access denied.";
+    }
+  }
+
+  // Auto-bypass login screen if already authenticated during this session tab
+  if (sessionStorage.getItem('authed') === 'true') {
+    document.getElementById('loginOverlay').classList.add('hidden');
+    document.getElementById('adminContent').classList.remove('hidden');
+  }
+
+  let currentSha = "";
+  let licenseData = [];
+
+  async function loadLicenses() {
+    const token = document.getElementById('ghToken').value.trim();
+    const repo = document.getElementById('repoPath').value.trim();
+    if (!token || !repo) return alert("Enter your GitHub token and repository path.");
+
+    try {
+      const res = await fetch(`https://api.github.com/repos/${repo}/contents/licenses.json`, {
+        headers: { Authorization: `token ${token}` }
+      });
+      
+      if (!res.ok) throw new Error("Could not fetch licenses file.");
+      
+      const file = await res.json();
+      currentSha = file.sha;
+      licenseData = JSON.parse(atob(file.content)).licenses || [];
+      renderTable();
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  }
+
+  function renderTable() {
+    const tbody = document.querySelector("#licenseTable tbody");
+    tbody.innerHTML = "";
+    licenseData.forEach((item, index) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${item.email}</td>
+        <td><code>${item.key}</code></td>
+        <td>${item.expires}</td>
+        <td class="status-${item.status}">${item.status.toUpperCase()}</td>
+        <td>
+          <button onclick="toggleStatus(${index})">${item.status === 'active' ? 'Revoke' : 'Activate'}</button>
+          <button onclick="deleteLicense(${index})" style="background:#e74c3c;color:white;">Delete</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function pushToGitHub(updatedList) {
+    const token = document.getElementById('ghToken').value.trim();
+    const repo = document.getElementById('repoPath').value.trim();
+    const content = btoa(JSON.stringify({ licenses: updatedList }, null, 2));
+
+    try {
+      const res = await fetch(`https://api.github.com/repos/${repo}/contents/licenses.json`, {
+        method: "PUT",
+        headers: {
+          Authorization: `token ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message: "Update licenses via Admin Web Dashboard",
+          content: content,
+          sha: currentSha
+        })
+      });
+
+      if (!res.ok) throw new Error("Failed to update repository.");
+      const result = await res.json();
+      currentSha = result.content.sha;
+      alert("Changes saved to GitHub successfully!");
+      renderTable();
+    } catch (err) {
+      alert("Save failed: " + err.message);
+    }
+  }
+
+  function saveLicense() {
+    const email = document.getElementById('newEmail').value.trim();
+    const key = document.getElementById('newKey').value.trim();
+    const expires = document.getElementById('newExpiry').value;
+
+    if (!email || !key || !expires) return alert("Fill in all fields.");
+
+    const existingIndex = licenseData.findIndex(l => l.key === key || l.email === email);
+    if (existingIndex >= 0) {
+      licenseData[existingIndex] = { email, key, expires, status: "active" };
+    } else {
+      licenseData.push({ email, key, expires, status: "active" });
+    }
+
+    pushToGitHub(licenseData);
+  }
+
+  function toggleStatus(index) {
+    licenseData[index].status = licenseData[index].status === 'active' ? 'revoked' : 'active';
+    pushToGitHub(licenseData);
+  }
+
+  function deleteLicense(index) {
+    if (confirm("Delete this license permanently?")) {
+      licenseData.splice(index, 1);
+      pushToGitHub(licenseData);
+    }
+  }
+</script>
+</body>
+</html>
