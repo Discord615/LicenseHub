@@ -14,6 +14,7 @@
     .status-revoked { color: #c0392b; font-weight: bold; }
     .card { background: #eef2f5; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
     .hidden { display: none !important; }
+    .muted { font-size: 12px; color: #666; margin-top: -4px; margin-bottom: 8px; }
     
     /* Login Overlay Styles */
     #loginOverlay {
@@ -36,7 +37,7 @@
   <!-- Password Login Overlay -->
   <div id="loginOverlay">
     <h3>BanDaliSIMS Admin</h3>
-    <p style="font-size: 13px; color: #666;">Enter your secure master password to access the panel.</p>
+    <p style="font-size: 13px; color: #666;">Enter your master password to access the panel.</p>
     <input type="password" id="adminPass" placeholder="Master Password" onkeydown="if(event.key==='Enter') attemptLogin()">
     <button onclick="attemptLogin()">Unlock Dashboard</button>
     <div id="loginError"></div>
@@ -46,19 +47,31 @@
   <div id="adminContent" class="container hidden">
     <h2>BanDaliSIMS License Manager</h2>
     
+    <!-- GitHub Config Card (Auto-saved) -->
     <div class="card">
       <h4>1. GitHub API Configuration</h4>
+      <p class="muted">Credentials automatically save locally in your browser.</p>
       <input type="password" id="ghToken" placeholder="GitHub Personal Access Token" style="width:70%;">
-      <input type="text" id="repoPath" placeholder="username/repo-name" value="YOUR_USER/YOUR_REPO" style="width:70%;">
-      <button onclick="loadLicenses()">Connect & Load Licenses</button>
+      <input type="text" id="repoPath" placeholder="username/repo-name" value="Discord615/LicenseHub" style="width:70%;">
+      <button onclick="saveAndConnect()">Connect & Save Config</button>
+      <span id="configSavedMsg" style="color:#27ae60; font-size:12px; margin-left:8px;"></span>
     </div>
 
+    <!-- Add / Update License -->
     <div class="card">
       <h4>2. Add / Update License</h4>
       <input type="email" id="newEmail" placeholder="User Email">
-      <input type="text" id="newKey" placeholder="License Key Token">
+      <input type="text" id="newKey" placeholder="License Key Token (or installation ID)">
       <input type="date" id="newExpiry">
       <button onclick="saveLicense()">Save License</button>
+    </div>
+
+    <!-- Security Card: Password Settings -->
+    <div class="card">
+      <h4>3. Security & Password Settings</h4>
+      <input type="password" id="newMasterPass" placeholder="New Master Password" style="width:70%;">
+      <button onclick="changePassword()">Change Password</button>
+      <div id="passChangedMsg" style="font-size:12px; margin-top:6px;"></div>
     </div>
 
     <h3>Active Registry</h3>
@@ -66,7 +79,7 @@
       <thead>
         <tr>
           <th>Email</th>
-          <th>Key</th>
+          <th>Key / ID</th>
           <th>Expires</th>
           <th>Status</th>
           <th>Actions</th>
@@ -79,54 +92,110 @@
   </div>
 
 <script>
-  const CORRECT_HASH = "c47d5ca4ddaa696c9ef7a00e9d633d501b7779101a4cb32e9c34fc90be8c7a62";
+  // Default hash (corresponds to current password hash)
+  const DEFAULT_HASH = "c47d5ca4ddaa696c9ef7a00e9d633d501b7779101a4cb32e9c34fc90be8c7a62";
+
+  function getActiveHash() {
+    return localStorage.getItem('bandali_custom_hash') || DEFAULT_HASH;
+  }
 
   async function attemptLogin() {
     const input = document.getElementById('adminPass').value;
     const msg = document.getElementById('loginError');
     
-    const encoder = new TextEncoder();
-    const data = encoder.encode(input);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const hashHex = await sha256(input);
 
-    if (hashHex === CORRECT_HASH) {
+    if (hashHex === getActiveHash()) {
       document.getElementById('loginOverlay').classList.add('hidden');
       document.getElementById('adminContent').classList.remove('hidden');
       sessionStorage.setItem('authed', 'true');
+      loadSavedConfig();
     } else {
       msg.textContent = "Incorrect password. Access denied.";
     }
   }
 
-  // Auto-bypass login screen if already authenticated during this session tab
+  async function sha256(message) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // Auto-bypass login screen if already authenticated during this tab session
   if (sessionStorage.getItem('authed') === 'true') {
-    document.getElementById('loginOverlay').classList.add('hidden');
-    document.getElementById('adminContent').classList.remove('hidden');
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById('loginOverlay').classList.add('hidden');
+      document.getElementById('adminContent').classList.remove('hidden');
+      loadSavedConfig();
+    });
+  }
+
+  function loadSavedConfig() {
+    const savedToken = localStorage.getItem('bandali_gh_token');
+    const savedRepo = localStorage.getItem('bandali_gh_repo');
+
+    if (savedToken) document.getElementById('ghToken').value = savedToken;
+    if (savedRepo) document.getElementById('repoPath').value = savedRepo;
+
+    if (savedToken && savedRepo) {
+      loadLicenses();
+    }
+  }
+
+  function saveAndConnect() {
+    const token = document.getElementById('ghToken').value.trim();
+    const repo = document.getElementById('repoPath').value.trim();
+
+    if (!token || !repo) return alert("Enter both token and repository path.");
+
+    localStorage.setItem('bandali_gh_token', token);
+    localStorage.setItem('bandali_gh_repo', repo);
+
+    const msg = document.getElementById('configSavedMsg');
+    msg.textContent = "Saved!";
+    setTimeout(() => msg.textContent = "", 2000);
+
+    loadLicenses();
+  }
+
+  async function changePassword() {
+    const newPass = document.getElementById('newMasterPass').value.trim();
+    const msg = document.getElementById('passChangedMsg');
+
+    if (!newPass) return alert("Please type a new password first.");
+
+    const newHash = await sha256(newPass);
+    localStorage.setItem('bandali_custom_hash', newHash);
+
+    msg.style.color = "#27ae60";
+    msg.innerHTML = `Password updated! To update your source file permanently, set:<br><code>const DEFAULT_HASH = "${newHash}";</code>`;
+    document.getElementById('newMasterPass').value = "";
   }
 
   let currentSha = "";
   let licenseData = [];
 
   async function loadLicenses() {
-    const token = document.getElementById('ghToken').value.trim();
-    const repo = document.getElementById('repoPath').value.trim();
-    if (!token || !repo) return alert("Enter your GitHub token and repository path.");
+    const token = document.getElementById('ghToken').value.trim() || localStorage.getItem('bandali_gh_token');
+    const repo = document.getElementById('repoPath').value.trim() || localStorage.getItem('bandali_gh_repo');
+    
+    if (!token || !repo) return;
 
     try {
       const res = await fetch(`https://api.github.com/repos/${repo}/contents/licenses.json`, {
         headers: { Authorization: `token ${token}` }
       });
       
-      if (!res.ok) throw new Error("Could not fetch licenses file.");
+      if (!res.ok) throw new Error("Could not fetch licenses file from GitHub.");
       
       const file = await res.json();
       currentSha = file.sha;
       licenseData = JSON.parse(atob(file.content)).licenses || [];
       renderTable();
     } catch (err) {
-      alert("Error: " + err.message);
+      alert("Error loading licenses: " + err.message);
     }
   }
 
@@ -137,7 +206,7 @@
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${item.email}</td>
-        <td><code>${item.key}</code></td>
+        <td><code>${item.key || item.machineId || 'N/A'}</code></td>
         <td>${item.expires}</td>
         <td class="status-${item.status}">${item.status.toUpperCase()}</td>
         <td>
@@ -150,8 +219,11 @@
   }
 
   async function pushToGitHub(updatedList) {
-    const token = document.getElementById('ghToken').value.trim();
-    const repo = document.getElementById('repoPath').value.trim();
+    const token = document.getElementById('ghToken').value.trim() || localStorage.getItem('bandali_gh_token');
+    const repo = document.getElementById('repoPath').value.trim() || localStorage.getItem('bandali_gh_repo');
+
+    if (!token || !repo) return alert("GitHub configuration missing.");
+
     const content = btoa(JSON.stringify({ licenses: updatedList }, null, 2));
 
     try {
@@ -183,13 +255,13 @@
     const key = document.getElementById('newKey').value.trim();
     const expires = document.getElementById('newExpiry').value;
 
-    if (!email || !key || !expires) return alert("Fill in all fields.");
+    if (!email || !expires) return alert("Fill in email and expiration date.");
 
-    const existingIndex = licenseData.findIndex(l => l.key === key || l.email === email);
+    const existingIndex = licenseData.findIndex(l => (key && l.key === key) || l.email.toLowerCase() === email.toLowerCase());
     if (existingIndex >= 0) {
-      licenseData[existingIndex] = { email, key, expires, status: "active" };
+      licenseData[existingIndex] = { email, key: key || licenseData[existingIndex].key || "", expires, status: "active" };
     } else {
-      licenseData.push({ email, key, expires, status: "active" });
+      licenseData.push({ email, key: key || "", expires, status: "active" });
     }
 
     pushToGitHub(licenseData);
