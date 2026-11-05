@@ -5,18 +5,19 @@
   <title>BanDaliSIMS License Manager</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 20px; background: #f4f6f8; color: #333; }
-    .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    input, button, select { padding: 8px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    input, button, select { padding: 8px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 25px; }
     th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
     th { background-color: #2c3e50; color: white; }
     .status-active { color: #27ae60; font-weight: bold; }
     .status-revoked { color: #c0392b; font-weight: bold; }
+    .status-pending { color: #d35400; font-weight: bold; }
     .card { background: #eef2f5; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
     .hidden { display: none !important; }
     .muted { font-size: 12px; color: #666; margin-top: -4px; margin-bottom: 8px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     
-    /* Login Overlay Styles */
     #loginOverlay {
       max-width: 400px;
       margin: 100px auto;
@@ -26,9 +27,8 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       text-align: center;
     }
-    #loginOverlay input { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 12px; font-size: 14px; }
+    #loginOverlay input { width: 100%; padding: 10px; margin-bottom: 12px; font-size: 14px; }
     #loginOverlay button { width: 100%; padding: 10px; background: #2c3e50; color: white; font-weight: bold; border: none; cursor: pointer; }
-    #loginOverlay button:hover { background: #34495e; }
     #loginError { color: #c0392b; font-size: 13px; margin-top: 10px; min-height: 18px; }
   </style>
 </head>
@@ -43,34 +43,56 @@
     <div id="loginError"></div>
   </div>
 
-  <!-- Main Admin Dashboard (Hidden until authenticated) -->
+  <!-- Main Admin Dashboard -->
   <div id="adminContent" class="container hidden">
     <h2>BanDaliSIMS License Manager</h2>
     
-    <!-- GitHub Config Card (Auto-saved) -->
+    <!-- GitHub Config Card -->
     <div class="card">
       <h4>1. GitHub API Configuration</h4>
-      <p class="muted">Credentials automatically save locally in your browser.</p>
-      <input type="password" id="ghToken" placeholder="GitHub Personal Access Token" style="width:70%;">
-      <input type="text" id="repoPath" placeholder="username/repo-name" value="Discord615/LicenseHub" style="width:70%;">
+      <input type="password" id="ghToken" placeholder="GitHub Personal Access Token" style="width:100%;">
+      <input type="text" id="repoPath" placeholder="username/repo-name" value="Discord615/LicenseHub" style="width:100%;">
       <button onclick="saveAndConnect()">Connect & Save Config</button>
       <span id="configSavedMsg" style="color:#27ae60; font-size:12px; margin-left:8px;"></span>
     </div>
 
-    <!-- Add / Update License -->
+    <!-- Pending Requests Section -->
+    <h3 style="color: #d35400;">Pending Access Requests</h3>
+    <table id="pendingTable">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Installation ID</th>
+          <th>Requested / Status</th>
+          <th>Quick Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Populated dynamically -->
+      </tbody>
+    </table>
+
+    <!-- Add / Approve License -->
     <div class="card">
-      <h4>2. Add / Update License</h4>
-      <input type="email" id="newEmail" placeholder="User Email">
-      <input type="text" id="newKey" placeholder="License Key Token (or installation ID)">
-      <input type="date" id="newExpiry">
-      <button onclick="saveLicense()">Save License</button>
+      <h4>2. Add / Approve License Manually</h4>
+      <div class="grid-2">
+        <input type="email" id="newEmail" placeholder="User Email">
+        <input type="text" id="newMachineId" placeholder="User Installation ID (UUID)">
+      </div>
+      <div class="grid-2">
+        <input type="date" id="newExpiry">
+        <button onclick="saveLicense()" style="background: #27ae60; color: white; font-weight: bold;">Save & Authorize License</button>
+      </div>
     </div>
 
-    <!-- Security Card: Password Settings -->
+    <!-- Security Card -->
     <div class="card">
       <h4>3. Security & Password Settings</h4>
-      <input type="password" id="newMasterPass" placeholder="New Master Password" style="width:70%;">
-      <button onclick="changePassword()">Change Password</button>
+      <input type="password" id="oldMasterPass" placeholder="Current Master Password" style="width:100%;">
+      <div class="grid-2" style="margin-top: 5px;">
+        <input type="password" id="newMasterPass" placeholder="New Master Password">
+        <button onclick="changePassword()">Update Password</button>
+      </div>
       <div id="passChangedMsg" style="font-size:12px; margin-top:6px;"></div>
     </div>
 
@@ -79,20 +101,19 @@
       <thead>
         <tr>
           <th>Email</th>
-          <th>Key / ID</th>
+          <th>Installation ID</th>
           <th>Expires</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
-        <!-- Loaded dynamically -->
+        <!-- Populated dynamically -->
       </tbody>
     </table>
   </div>
 
 <script>
-  // Default hash (corresponds to current password hash)
   const DEFAULT_HASH = "c47d5ca4ddaa696c9ef7a00e9d633d501b7779101a4cb32e9c34fc90be8c7a62";
 
   function getActiveHash() {
@@ -102,7 +123,6 @@
   async function attemptLogin() {
     const input = document.getElementById('adminPass').value;
     const msg = document.getElementById('loginError');
-    
     const hashHex = await sha256(input);
 
     if (hashHex === getActiveHash()) {
@@ -123,7 +143,6 @@
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  // Auto-bypass login screen if already authenticated during this tab session
   if (sessionStorage.getItem('authed') === 'true') {
     document.addEventListener("DOMContentLoaded", () => {
       document.getElementById('loginOverlay').classList.add('hidden');
@@ -135,42 +154,41 @@
   function loadSavedConfig() {
     const savedToken = localStorage.getItem('bandali_gh_token');
     const savedRepo = localStorage.getItem('bandali_gh_repo');
-
     if (savedToken) document.getElementById('ghToken').value = savedToken;
     if (savedRepo) document.getElementById('repoPath').value = savedRepo;
-
-    if (savedToken && savedRepo) {
-      loadLicenses();
-    }
+    if (savedToken && savedRepo) loadLicenses();
   }
 
   function saveAndConnect() {
     const token = document.getElementById('ghToken').value.trim();
     const repo = document.getElementById('repoPath').value.trim();
-
     if (!token || !repo) return alert("Enter both token and repository path.");
-
     localStorage.setItem('bandali_gh_token', token);
     localStorage.setItem('bandali_gh_repo', repo);
-
     const msg = document.getElementById('configSavedMsg');
     msg.textContent = "Saved!";
     setTimeout(() => msg.textContent = "", 2000);
-
     loadLicenses();
   }
 
   async function changePassword() {
+    const oldPass = document.getElementById('oldMasterPass').value.trim();
     const newPass = document.getElementById('newMasterPass').value.trim();
     const msg = document.getElementById('passChangedMsg');
+    if (!oldPass || !newPass) return alert("Fill in current and new password.");
 
-    if (!newPass) return alert("Please type a new password first.");
+    const oldHash = await sha256(oldPass);
+    if (oldHash !== getActiveHash()) {
+      msg.style.color = "#c0392b";
+      msg.textContent = "Current password is incorrect.";
+      return;
+    }
 
     const newHash = await sha256(newPass);
     localStorage.setItem('bandali_custom_hash', newHash);
-
     msg.style.color = "#27ae60";
-    msg.innerHTML = `Password updated! To update your source file permanently, set:<br><code>const DEFAULT_HASH = "${newHash}";</code>`;
+    msg.innerHTML = `Password changed! Update source file constant:<br><code>const DEFAULT_HASH = "${newHash}";</code>`;
+    document.getElementById('oldMasterPass').value = "";
     document.getElementById('newMasterPass').value = "";
   }
 
@@ -180,48 +198,69 @@
   async function loadLicenses() {
     const token = document.getElementById('ghToken').value.trim() || localStorage.getItem('bandali_gh_token');
     const repo = document.getElementById('repoPath').value.trim() || localStorage.getItem('bandali_gh_repo');
-    
     if (!token || !repo) return;
 
     try {
       const res = await fetch(`https://api.github.com/repos/${repo}/contents/licenses.json`, {
         headers: { Authorization: `token ${token}` }
       });
-      
       if (!res.ok) throw new Error("Could not fetch licenses file from GitHub.");
-      
       const file = await res.json();
       currentSha = file.sha;
       licenseData = JSON.parse(atob(file.content)).licenses || [];
-      renderTable();
+      renderTables();
     } catch (err) {
       alert("Error loading licenses: " + err.message);
     }
   }
 
-  function renderTable() {
-    const tbody = document.querySelector("#licenseTable tbody");
-    tbody.innerHTML = "";
+  function renderTables() {
+    const activeTbody = document.querySelector("#licenseTable tbody");
+    const pendingTbody = document.querySelector("#pendingTable tbody");
+    activeTbody.innerHTML = "";
+    pendingTbody.innerHTML = "";
+
+    let pendingCount = 0;
+
     licenseData.forEach((item, index) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${item.email}</td>
-        <td><code>${item.key || item.machineId || 'N/A'}</code></td>
-        <td>${item.expires}</td>
-        <td class="status-${item.status}">${item.status.toUpperCase()}</td>
-        <td>
-          <button onclick="toggleStatus(${index})">${item.status === 'active' ? 'Revoke' : 'Activate'}</button>
-          <button onclick="deleteLicense(${index})" style="background:#e74c3c;color:white;">Delete</button>
-        </td>
-      `;
-      tbody.appendChild(tr);
+      if (item.status === 'pending') {
+        pendingCount++;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${item.email}</td>
+          <td><code>${item.machineId || 'N/A'}</code></td>
+          <td class="status-pending">PENDING</td>
+          <td>
+            <input type="date" id="approveExpiry_${index}" style="padding:4px; margin-right:4px;">
+            <button onclick="approveRequest(${index})" style="background:#27ae60; color:white; padding:6px 10px;">Approve</button>
+            <button onclick="deleteLicense(${index})" style="background:#e74c3c; color:white; padding:6px 10px;">Reject</button>
+          </td>
+        `;
+        pendingTbody.appendChild(tr);
+      } else {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${item.email}</td>
+          <td><code>${item.machineId || 'N/A'}</code></td>
+          <td>${item.expires}</td>
+          <td class="status-${item.status}">${item.status.toUpperCase()}</td>
+          <td>
+            <button onclick="toggleStatus(${index})">${item.status === 'active' ? 'Revoke' : 'Activate'}</button>
+            <button onclick="deleteLicense(${index})" style="background:#e74c3c;color:white;">Delete</button>
+          </td>
+        `;
+        activeTbody.appendChild(tr);
+      }
     });
+
+    if (pendingCount === 0) {
+      pendingTbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#7f8c8d; font-style:italic;">No pending access requests.</td></tr>`;
+    }
   }
 
   async function pushToGitHub(updatedList) {
     const token = document.getElementById('ghToken').value.trim() || localStorage.getItem('bandali_gh_token');
     const repo = document.getElementById('repoPath').value.trim() || localStorage.getItem('bandali_gh_repo');
-
     if (!token || !repo) return alert("GitHub configuration missing.");
 
     const content = btoa(JSON.stringify({ licenses: updatedList }, null, 2));
@@ -234,7 +273,7 @@
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          message: "Update licenses via Admin Web Dashboard",
+          message: "Update license registry via Admin Dashboard",
           content: content,
           sha: currentSha
         })
@@ -243,26 +282,31 @@
       if (!res.ok) throw new Error("Failed to update repository.");
       const result = await res.json();
       currentSha = result.content.sha;
-      alert("Changes saved to GitHub successfully!");
-      renderTable();
+      renderTables();
     } catch (err) {
       alert("Save failed: " + err.message);
     }
   }
 
+  function approveRequest(index) {
+    const dateInput = document.getElementById(`approveExpiry_${index}`).value;
+    if (!dateInput) return alert("Please select an expiration date before approving.");
+    licenseData[index].expires = dateInput;
+    licenseData[index].status = "active";
+    pushToGitHub(licenseData);
+  }
+
   function saveLicense() {
-    const email = document.getElementById('newEmail').value.trim();
-    const key = document.getElementById('newKey').value.trim();
+    const email = document.getElementById('newEmail').value.trim().toLowerCase();
+    const machineId = document.getElementById('newMachineId').value.trim();
     const expires = document.getElementById('newExpiry').value;
+    if (!email || !expires) return alert("Please fill in email and expiration date.");
 
-    if (!email || !expires) return alert("Fill in email and expiration date.");
+    const existingIndex = licenseData.findIndex(l => l.email.toLowerCase() === email);
+    const licenseObj = { email, machineId: machineId || "", expires, status: "active" };
 
-    const existingIndex = licenseData.findIndex(l => (key && l.key === key) || l.email.toLowerCase() === email.toLowerCase());
-    if (existingIndex >= 0) {
-      licenseData[existingIndex] = { email, key: key || licenseData[existingIndex].key || "", expires, status: "active" };
-    } else {
-      licenseData.push({ email, key: key || "", expires, status: "active" });
-    }
+    if (existingIndex >= 0) licenseData[existingIndex] = licenseObj;
+    else licenseData.push(licenseObj);
 
     pushToGitHub(licenseData);
   }
@@ -273,7 +317,7 @@
   }
 
   function deleteLicense(index) {
-    if (confirm("Delete this license permanently?")) {
+    if (confirm("Delete or reject this entry permanently?")) {
       licenseData.splice(index, 1);
       pushToGitHub(licenseData);
     }
