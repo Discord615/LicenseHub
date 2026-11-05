@@ -257,7 +257,7 @@
       </div>
     </header>
 
-    <!-- Token Authentication Lock Box (Uses type="password" so browser managers can save/auto-fill it) -->
+    <!-- Token Authentication Lock Box -->
     <div class="config-box" id="authBox">
       <h2>Administrator Authentication Required</h2>
       <label for="patToken" style="margin-top: 10px;">Enter your GitHub Personal Access Token (PAT) to unlock controls:</label>
@@ -360,7 +360,7 @@
         return;
       }
 
-      if (!isAuto) showStatus("Verifying token with GitHub...", "#7f8c8d");
+      if (!isAuto) showStatus("Verifying admin identity...", "#7f8c8d");
 
       try {
         const testRes = await fetch("https://api.github.com/user", {
@@ -369,7 +369,12 @@
 
         if (!testRes.ok) throw new Error("Invalid GitHub Personal Access Token.");
 
-        // Stored in sessionStorage so browser password manager can securely auto-fill it next time
+        const userData = await testRes.json();
+        const ADMIN_GITHUB_USERNAME = "Discord615";
+        if (userData.login.toLowerCase() !== ADMIN_GITHUB_USERNAME.toLowerCase()) {
+          throw new Error(`Access denied. Token belongs to '@${userData.login}', not the administrator.`);
+        }
+
         sessionStorage.setItem("github_admin_pat", token);
 
         document.getElementById("authBox").classList.add("hidden");
@@ -466,8 +471,9 @@
       pendingTbody.innerHTML = "";
       activeTbody.innerHTML = "";
 
-      const pendingList = licenseRegistry.licenses.filter(l => l.status === "pending");
-      const activeList = licenseRegistry.licenses.filter(l => l.status !== "pending");
+      // Explicitly check status: items without explicit status or status === "pending" go to pending list
+      const pendingList = licenseRegistry.licenses.filter(l => !l.status || l.status === "pending");
+      const activeList = licenseRegistry.licenses.filter(l => l.status && l.status !== "pending");
 
       if (pendingList.length === 0) {
         pendingTbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">No pending requests.</td></tr>`;
@@ -513,7 +519,7 @@
             <td>
               <input type="date" value="${item.expires || ''}" style="width:130px;" onchange="updateExpiryInline(${globalIndex}, this.value)">
             </td>
-            <td><span class="status-${item.status}">${item.status.toUpperCase()}</span></td>
+            <td><span class="status-${item.status}">${(item.status || 'unknown').toUpperCase()}</span></td>
             <td>
               <div style="display:flex; gap:6px; flex-wrap:wrap;">
                 <button onclick="queueToggleStatus(${globalIndex})">${isSuspended ? 'Activate' : 'Suspend'}</button>
