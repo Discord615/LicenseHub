@@ -160,7 +160,7 @@
   <div class="container">
     <header>
       <h1>BanDaliSIMS License Manager</h1>
-      <button onclick="loadLicenses()">Refresh Data</button>
+      <button onclick="loadLicenses(false)">Refresh Data</button>
     </header>
 
     <!-- GitHub Config Settings -->
@@ -185,7 +185,7 @@
           </tr>
         </thead>
         <tbody id="pendingTableBody">
-          <!-- rows will render here -->
+          <tr><td colspan="3" style="text-align:center; color:var(--text-muted);">Loading pending requests...</td></tr>
         </tbody>
       </table>
     </div>
@@ -223,7 +223,12 @@
     document.addEventListener("DOMContentLoaded", () => {
       const savedToken = localStorage.getItem("github_admin_pat");
       if (savedToken) document.getElementById("patToken").value = savedToken;
-      loadLicenses();
+      loadLicenses(false);
+
+      // Auto-refresh every 5 seconds in the background
+      setInterval(() => {
+        loadLicenses(true);
+      }, 5000);
     });
 
     function saveToken() {
@@ -238,17 +243,15 @@
       el.textContent = msg;
     }
 
-    async function loadLicenses() {
-      showStatus("Fetching latest license registry...", "#7f8c8d");
+    async function loadLicenses(silent = false) {
+      if (!silent) showStatus("Fetching latest license registry...", "#7f8c8d");
       try {
-        // Cache-busting fetch
         const res = await fetch(`${CONFIG.RAW_URL}?t=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) throw new Error("Failed to fetch licenses.json");
         licenseRegistry = await res.json();
         
-        // Also fetch file SHA for direct commits
         const token = localStorage.getItem("github_admin_pat");
-        if (token) {
+        if (token && !fileSha) {
           const apiRes = await fetch(CONFIG.API_URL, {
             headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
           });
@@ -259,9 +262,9 @@
         }
 
         renderTables();
-        showStatus("Registry loaded successfully.", "green");
+        if (!silent) showStatus("Registry loaded successfully.", "green");
       } catch (err) {
-        showStatus("Error loading licenses: " + err.message, "red");
+        if (!silent) showStatus("Error loading licenses: " + err.message, "red");
       }
     }
 
@@ -326,7 +329,7 @@
 
     function getDefaultExpiry() {
       const d = new Date();
-      d.setFullYear(d.getFullYear() + 1); // Default 1 year from now
+      d.setFullYear(d.getFullYear() + 1);
       return d.toISOString().split('T')[0];
     }
 
@@ -339,25 +342,20 @@
         return;
       }
 
-      // 1. Update state & UI instantly
       licenseRegistry.licenses[index].status = "active";
       licenseRegistry.licenses[index].expires = expiryDate;
       renderTables();
       showStatus("Approved! Syncing to GitHub in background...", "green");
 
-      // 2. Commit in background
       await commitChanges(`Approve access for ${licenseRegistry.licenses[index].email}`);
     }
 
     async function toggleStatus(index) {
       const current = licenseRegistry.licenses[index].status;
       licenseRegistry.licenses[index].status = (current === "active") ? "suspended" : "active";
-      
-      // Update state & UI instantly
       renderTables();
       showStatus("Status toggled! Syncing in background...", "green");
 
-      // Commit in background
       await commitChanges(`Toggle license status for ${licenseRegistry.licenses[index].email}`);
     }
 
@@ -365,12 +363,9 @@
       if (!confirm("Are you sure you want to delete this record?")) return;
       const email = licenseRegistry.licenses[index].email;
       licenseRegistry.licenses.splice(index, 1);
-      
-      // Update state & UI instantly
       renderTables();
       showStatus("Deleted! Syncing in background...", "green");
 
-      // Commit in background
       await commitChanges(`Delete license record for ${email}`);
     }
 
@@ -419,7 +414,7 @@
         showStatus("Changes successfully synced to GitHub!", "green");
       } catch (err) {
         showStatus("Sync failed: " + err.message, "red");
-        loadLicenses(); // Reload to restore state if sync failed
+        loadLicenses(false);
       }
     }
   </script>
