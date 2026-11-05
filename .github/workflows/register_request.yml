@@ -25,22 +25,39 @@ jobs:
               data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
             }
             
-            const existing = data.licenses.find(l => l.email.toLowerCase() === email);
-            if (!existing) {
+            let existing = data.licenses.find(l => l.email.toLowerCase() === email);
+            
+            if (existing) {
+              // Ensure machineIds is an array (migrating legacy machineId string if necessary)
+              if (!existing.machineIds) {
+                existing.machineIds = existing.machineId ? [existing.machineId] : [];
+                delete existing.machineId;
+              }
+              // Add new machine if not already registered for this user
+              if (!existing.machineIds.includes(machineId)) {
+                existing.machineIds.push(machineId);
+                existing.status = "pending"; // Flag pending status so admin re-approves the new device
+                console.log(`Added new device ${machineId} for existing user ${email}`);
+              } else {
+                console.log(`Device ${machineId} already recorded for ${email}`);
+              }
+            } else {
+              // Brand new user request
               data.licenses.push({
                 email: email,
-                machineId: machineId,
+                machineIds: [machineId],
                 expires: "",
                 status: "pending"
               });
-              fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-              console.log(`Added pending request for ${email}`);
+              console.log(`Added new pending user request for ${email}`);
             }
+            
+            fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 
       - name: Commit & Push Changes
         run: |
           git config --global user.name "LicenseHub Bot"
           git config --global user.email "bot@licensehub.local"
           git add licenses.json
-          git commit -m "Auto-register pending request from extension" || exit 0
+          git commit -m "Auto-register pending request/device from extension" || exit 0
           git push
