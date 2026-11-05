@@ -70,7 +70,7 @@
 
     .config-box {
       background: var(--card-bg);
-      padding: 16px 20px;
+      padding: 20px 24px;
       border-radius: var(--radius);
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
       margin-bottom: 16px;
@@ -96,7 +96,7 @@
     }
 
     input[type="text"], input[type="password"], input[type="date"] {
-      padding: 8px 12px;
+      padding: 9px 12px;
       border: 1px solid var(--border);
       border-radius: 4px;
       font-size: 13px;
@@ -237,6 +237,10 @@
       height: 16px;
       cursor: pointer;
     }
+
+    .hidden {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
@@ -244,74 +248,81 @@
   <div class="container">
     <header>
       <h1>BanDaliSIMS License Manager</h1>
-      <div class="header-actions">
+      <div class="header-actions hidden" id="headerActions">
         <button id="confirmBtn" class="btn-confirm" onclick="confirmAllUpdates()" disabled>
           Confirm Updates <span id="pendingCountBadge" class="badge-uncommitted">0</span>
         </button>
         <button onclick="loadLicenses(false)">Refresh Data</button>
+        <button class="btn-danger" onclick="lockDashboard()">Lock</button>
       </div>
     </header>
 
-    <!-- GitHub Config Settings -->
-    <div class="config-box">
-      <label for="patToken">GitHub Personal Access Token (PAT with repo scope)</label>
-      <div class="config-row">
-        <input type="password" id="patToken" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
-        <button onclick="saveToken()">Save Token</button>
-      </div>
+    <!-- Token Authentication Lock Box (Uses type="password" so browser managers can save/auto-fill it) -->
+    <div class="config-box" id="authBox">
+      <h2>Administrator Authentication Required</h2>
+      <label for="patToken" style="margin-top: 10px;">Enter your GitHub Personal Access Token (PAT) to unlock controls:</label>
+      <form onsubmit="event.preventDefault(); unlockDashboard(false);">
+        <div class="config-row">
+          <input type="password" id="patToken" name="patToken" autocomplete="current-password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" required>
+          <button type="submit">Unlock Dashboard</button>
+        </div>
+      </form>
       <div id="statusMessage"></div>
     </div>
 
-    <!-- Pending Access Requests -->
-    <div class="card">
-      <div class="card-header">
-        <h2>Pending Access Requests</h2>
-        <div>
-          <button class="btn-success" onclick="batchApproveSelected()">Approve Selected</button>
-          <button class="btn-danger" onclick="batchDeletePendingSelected()">Reject Selected</button>
+    <!-- Protected Management Interface (Hidden until unlocked) -->
+    <div id="protectedContent" class="hidden">
+      <!-- Pending Access Requests -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Pending Access Requests</h2>
+          <div>
+            <button class="btn-success" onclick="batchApproveSelected()">Approve Selected</button>
+            <button class="btn-danger" onclick="batchDeletePendingSelected()">Reject Selected</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th class="checkbox-col"><input type="checkbox" id="selectAllPending" onclick="toggleSelectAll('pending', this.checked)"></th>
+                <th>Email</th>
+                <th>Device Fingerprints (Machine IDs)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="pendingTableBody">
+              <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Loading pending requests...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th class="checkbox-col"><input type="checkbox" id="selectAllPending" onclick="toggleSelectAll('pending', this.checked)"></th>
-              <th>Email</th>
-              <th>Device Fingerprints (Machine IDs)</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="pendingTableBody">
-            <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Loading pending requests...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
 
-    <!-- Active & Managed Licenses -->
-    <div class="card">
-      <div class="card-header">
-        <h2>Managed Licenses</h2>
-        <div>
-          <button class="btn-danger" onclick="batchDeleteActiveSelected()">Delete Selected</button>
+      <!-- Active & Managed Licenses -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Managed Licenses</h2>
+          <div>
+            <button class="btn-danger" onclick="batchDeleteActiveSelected()">Delete Selected</button>
+          </div>
         </div>
-      </div>
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th class="checkbox-col"><input type="checkbox" id="selectAllActive" onclick="toggleSelectAll('active', this.checked)"></th>
-              <th>Email</th>
-              <th>Registered Devices</th>
-              <th>Expires</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="activeTableBody">
-            <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading licenses...</td></tr>
-          </tbody>
-        </table>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th class="checkbox-col"><input type="checkbox" id="selectAllActive" onclick="toggleSelectAll('active', this.checked)"></th>
+                <th>Email</th>
+                <th>Registered Devices</th>
+                <th>Expires</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="activeTableBody">
+              <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading licenses...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -329,28 +340,66 @@
     let pendingChangesCount = 0;
 
     document.addEventListener("DOMContentLoaded", () => {
-      const savedToken = localStorage.getItem("github_admin_pat");
-      if (savedToken) document.getElementById("patToken").value = savedToken;
-      loadLicenses(false);
-
-      // Background poll every 10 seconds (only if no unsaved changes are queued)
-      setInterval(() => {
-        if (!hasUnsavedChanges) {
-          loadLicenses(true);
-        }
-      }, 10000);
+      const savedToken = sessionStorage.getItem("github_admin_pat");
+      if (savedToken) {
+        document.getElementById("patToken").value = savedToken;
+        unlockDashboard(true);
+      }
     });
-
-    function saveToken() {
-      const token = document.getElementById("patToken").value.trim();
-      localStorage.setItem("github_admin_pat", token);
-      showStatus("Token saved locally!", "green");
-    }
 
     function showStatus(msg, color) {
       const el = document.getElementById("statusMessage");
       el.style.color = color;
       el.textContent = msg;
+    }
+
+    async function unlockDashboard(isAuto = false) {
+      const token = document.getElementById("patToken").value.trim();
+      if (!token) {
+        showStatus("Please enter your GitHub Personal Access Token.", "red");
+        return;
+      }
+
+      if (!isAuto) showStatus("Verifying token with GitHub...", "#7f8c8d");
+
+      try {
+        const testRes = await fetch("https://api.github.com/user", {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
+        });
+
+        if (!testRes.ok) throw new Error("Invalid GitHub Personal Access Token.");
+
+        // Stored in sessionStorage so browser password manager can securely auto-fill it next time
+        sessionStorage.setItem("github_admin_pat", token);
+
+        document.getElementById("authBox").classList.add("hidden");
+        document.getElementById("protectedContent").classList.remove("hidden");
+        document.getElementById("headerActions").classList.remove("hidden");
+
+        loadLicenses(false);
+
+        setInterval(() => {
+          if (!hasUnsavedChanges && !document.getElementById("protectedContent").classList.contains("hidden")) {
+            loadLicenses(true);
+          }
+        }, 10000);
+
+      } catch (err) {
+        sessionStorage.removeItem("github_admin_pat");
+        showStatus("Authentication failed: " + err.message, "red");
+      }
+    }
+
+    function lockDashboard() {
+      sessionStorage.removeItem("github_admin_pat");
+      hasUnsavedChanges = false;
+      pendingChangesCount = 0;
+
+      document.getElementById("authBox").classList.remove("hidden");
+      document.getElementById("protectedContent").classList.add("hidden");
+      document.getElementById("headerActions").classList.add("hidden");
+      document.getElementById("patToken").value = "";
+      showStatus("Dashboard locked.", "#7f8c8d");
     }
 
     function markDirty(changeCountDelta = 1) {
@@ -374,9 +423,11 @@
     }
 
     async function loadLicenses(silent = false) {
-      if (hasUnsavedChanges && silent) return; // Skip background auto-poll if local changes exist
+      if (hasUnsavedChanges && silent) return;
 
+      const token = sessionStorage.getItem("github_admin_pat");
       if (!silent) showStatus("Fetching latest license registry...", "#7f8c8d");
+
       try {
         const res = await fetch(`${CONFIG.RAW_URL}?t=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) throw new Error("Failed to fetch licenses.json");
@@ -391,8 +442,6 @@
           licenseRegistry = { licenses: [] };
         }
 
-        // Fetch SHA for direct commit API
-        const token = localStorage.getItem("github_admin_pat");
         if (token && !fileSha) {
           const apiRes = await fetch(CONFIG.API_URL, {
             headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
@@ -420,7 +469,6 @@
       const pendingList = licenseRegistry.licenses.filter(l => l.status === "pending");
       const activeList = licenseRegistry.licenses.filter(l => l.status !== "pending");
 
-      // Render Pending Table
       if (pendingList.length === 0) {
         pendingTbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">No pending requests.</td></tr>`;
       } else {
@@ -447,7 +495,6 @@
         });
       }
 
-      // Render Active / Managed Table
       if (activeList.length === 0) {
         activeTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No managed licenses.</td></tr>`;
       } else {
@@ -490,8 +537,6 @@
       document.querySelectorAll(selector).forEach(chk => chk.checked = checked);
     }
 
-    // --- Action Queuing (In-Memory Only) ---
-
     function queueApprove(index) {
       const expiryInput = document.getElementById(`expiry_${index}`);
       const expiryDate = expiryInput ? expiryInput.value : getDefaultExpiry();
@@ -525,8 +570,6 @@
       renderTables();
     }
 
-    // --- Batch Operations ---
-
     function batchApproveSelected() {
       const checkboxes = document.querySelectorAll('.pending-chk:checked');
       if (checkboxes.length === 0) return alert("Select at least one pending request.");
@@ -552,7 +595,6 @@
       const checkboxes = Array.from(document.querySelectorAll('.pending-chk:checked'));
       if (checkboxes.length === 0) return alert("Select at least one pending request to reject.");
 
-      // Delete from highest index down so splice offsets don't corrupt indices
       const indices = checkboxes.map(chk => parseInt(chk.dataset.index, 10)).sort((a, b) => b - a);
       indices.forEach(idx => licenseRegistry.licenses.splice(idx, 1));
 
@@ -575,21 +617,18 @@
       renderTables();
     }
 
-    // --- Commit All Pending Updates to GitHub ---
-
     async function confirmAllUpdates() {
-      const token = document.getElementById("patToken").value.trim();
+      const token = sessionStorage.getItem("github_admin_pat");
       if (!token) {
-        alert("Please enter and save your GitHub Personal Access Token first!");
+        alert("Session expired. Please re-authenticate.");
+        lockDashboard();
         return;
       }
 
-      showStatus("Syncing batch updates to GitHub...", "#f39c12");
       const confirmBtn = document.getElementById("confirmBtn");
       confirmBtn.disabled = true;
 
       try {
-        // Clean temporary metadata tags before saving
         const sanitizedLicenses = licenseRegistry.licenses.map(l => {
           const clean = { ...l };
           delete clean._modified;
@@ -598,7 +637,6 @@
 
         const payload = { licenses: sanitizedLicenses };
 
-        // Ensure fresh SHA
         const metaRes = await fetch(CONFIG.API_URL, {
           headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
         });
@@ -631,15 +669,14 @@
         const newMeta = await putRes.json();
         fileSha = newMeta.content.sha;
 
-        // Reset tracking flags
         hasUnsavedChanges = false;
         pendingChangesCount = 0;
         markDirty(0);
 
-        showStatus("All updates successfully pushed to GitHub!", "green");
+        alert("All updates successfully pushed to GitHub!");
         await loadLicenses(false);
       } catch (err) {
-        showStatus("Sync failed: " + err.message, "red");
+        alert("Sync failed: " + err.message);
         confirmBtn.disabled = false;
       }
     }
