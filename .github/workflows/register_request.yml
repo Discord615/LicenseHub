@@ -1,0 +1,46 @@
+name: Register Pending License Request
+
+on:
+  repository_dispatch:
+    types: [request_access]
+
+jobs:
+  add-pending:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Update licenses.json with Pending Request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const email = context.payload.client_payload.email.toLowerCase().trim();
+            const machineId = context.payload.client_payload.machineId;
+            
+            const filePath = './licenses.json';
+            let data = { licenses: [] };
+            if (fs.existsSync(filePath)) {
+              data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            }
+            
+            const existing = data.licenses.find(l => l.email.toLowerCase() === email);
+            if (!existing) {
+              data.licenses.push({
+                email: email,
+                machineId: machineId,
+                expires: "",
+                status: "pending"
+              });
+              fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+              console.log(`Added pending request for ${email}`);
+            }
+
+      - name: Commit & Push Changes
+        run: |
+          git config --global user.name "LicenseHub Bot"
+          git config --global user.email "bot@licensehub.local"
+          git add licenses.json
+          git commit -m "Auto-register pending request from extension" || exit 0
+          git push
