@@ -19,12 +19,16 @@
       --radius: 8px;
     }
 
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background-color: var(--bg-color);
       color: var(--text-main);
       margin: 0;
-      padding: 24px;
+      padding: 16px;
     }
 
     .container {
@@ -34,27 +38,42 @@
 
     header {
       background: var(--card-bg);
-      padding: 20px 24px;
+      padding: 16px 20px;
       border-radius: var(--radius);
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-      margin-bottom: 24px;
+      margin-bottom: 16px;
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
+      gap: 12px;
     }
 
     h1 {
       margin: 0;
-      font-size: 22px;
+      font-size: 20px;
       color: var(--text-main);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      width: 100%;
+    }
+
+    @media (min-width: 600px) {
+      .header-actions {
+        width: auto;
+      }
     }
 
     .config-box {
       background: var(--card-bg);
-      padding: 20px 24px;
+      padding: 16px 20px;
       border-radius: var(--radius);
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }
 
     .config-box label {
@@ -66,7 +85,14 @@
 
     .config-row {
       display: flex;
-      gap: 12px;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    @media (min-width: 600px) {
+      .config-row {
+        flex-direction: row;
+      }
     }
 
     input[type="text"], input[type="password"], input[type="date"] {
@@ -75,6 +101,7 @@
       border-radius: 4px;
       font-size: 13px;
       outline: none;
+      width: 100%;
     }
 
     input[type="text"], input[type="password"] {
@@ -82,7 +109,7 @@
     }
 
     button {
-      padding: 8px 16px;
+      padding: 9px 16px;
       background-color: var(--primary);
       color: white;
       border: none;
@@ -90,39 +117,67 @@
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: background 0.2s, opacity 0.2s;
     }
 
     button:hover {
       background-color: var(--primary-hover);
     }
 
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-success { background-color: var(--success); }
+    .btn-success:hover { background-color: #219653; }
+    .btn-danger { background-color: var(--danger); }
+    .btn-danger:hover { background-color: #c0392b; }
+    .btn-confirm { background-color: #8e44ad; }
+    .btn-confirm:hover { background-color: #7d3c98; }
+
     .card {
       background: var(--card-bg);
-      padding: 20px 24px;
+      padding: 16px 20px;
       border-radius: var(--radius);
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-      margin-bottom: 24px;
+      margin-bottom: 16px;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid var(--bg-color);
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 8px;
     }
 
     h2 {
       font-size: 16px;
-      margin-top: 0;
-      margin-bottom: 16px;
-      border-bottom: 2px solid var(--bg-color);
-      padding-bottom: 8px;
+      margin: 0;
+    }
+
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
+      min-width: 600px;
     }
 
     th, td {
-      padding: 12px;
+      padding: 10px 12px;
       text-align: left;
       border-bottom: 1px solid var(--border);
+      vertical-align: middle;
     }
 
     th {
@@ -137,21 +192,50 @@
       border-radius: 4px;
       font-family: monospace;
       font-size: 11px;
+      word-break: break-all;
     }
 
     .status-active { color: var(--success); font-weight: 600; }
     .status-pending { color: var(--warning); font-weight: 600; }
     .status-suspended { color: var(--danger); font-weight: 600; }
+    .status-modified { background-color: #fffde7; }
 
-    .btn-success { background-color: var(--success); }
-    .btn-success:hover { background-color: #219653; }
-    .btn-danger { background-color: var(--danger); }
-    .btn-danger:hover { background-color: #c0392b; }
+    .badge-pending-change {
+      display: inline-block;
+      font-size: 10px;
+      background: #ffeaa7;
+      color: #d35400;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: bold;
+      margin-left: 6px;
+    }
 
     #statusMessage {
       margin-top: 12px;
       font-size: 13px;
       font-weight: 500;
+    }
+
+    .badge-uncommitted {
+      display: none;
+      background-color: #e67e22;
+      color: white;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      margin-left: 8px;
+    }
+
+    .checkbox-col {
+      width: 32px;
+      text-align: center;
+    }
+
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -160,7 +244,12 @@
   <div class="container">
     <header>
       <h1>BanDaliSIMS License Manager</h1>
-      <button onclick="loadLicenses(false)">Refresh Data</button>
+      <div class="header-actions">
+        <button id="confirmBtn" class="btn-confirm" onclick="confirmAllUpdates()" disabled>
+          Confirm Updates <span id="pendingCountBadge" class="badge-uncommitted">0</span>
+        </button>
+        <button onclick="loadLicenses(false)">Refresh Data</button>
+      </div>
     </header>
 
     <!-- GitHub Config Settings -->
@@ -175,38 +264,55 @@
 
     <!-- Pending Access Requests -->
     <div class="card">
-      <h2>Pending Access Requests</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Device Fingerprints (Machine IDs)</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="pendingTableBody">
-          <tr><td colspan="3" style="text-align:center; color:var(--text-muted);">Loading pending requests...</td></tr>
-        </tbody>
-      </table>
+      <div class="card-header">
+        <h2>Pending Access Requests</h2>
+        <div>
+          <button class="btn-success" onclick="batchApproveSelected()">Approve Selected</button>
+          <button class="btn-danger" onclick="batchDeletePendingSelected()">Reject Selected</button>
+        </div>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th class="checkbox-col"><input type="checkbox" id="selectAllPending" onclick="toggleSelectAll('pending', this.checked)"></th>
+              <th>Email</th>
+              <th>Device Fingerprints (Machine IDs)</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="pendingTableBody">
+            <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Loading pending requests...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Active & Managed Licenses -->
     <div class="card">
-      <h2>Managed Licenses</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Registered Devices</th>
-            <th>Expires</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="activeTableBody">
-          <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading licenses...</td></tr>
-        </tbody>
-      </table>
+      <div class="card-header">
+        <h2>Managed Licenses</h2>
+        <div>
+          <button class="btn-danger" onclick="batchDeleteActiveSelected()">Delete Selected</button>
+        </div>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th class="checkbox-col"><input type="checkbox" id="selectAllActive" onclick="toggleSelectAll('active', this.checked)"></th>
+              <th>Email</th>
+              <th>Registered Devices</th>
+              <th>Expires</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="activeTableBody">
+            <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading licenses...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -219,16 +325,20 @@
 
     let licenseRegistry = { licenses: [] };
     let fileSha = "";
+    let hasUnsavedChanges = false;
+    let pendingChangesCount = 0;
 
     document.addEventListener("DOMContentLoaded", () => {
       const savedToken = localStorage.getItem("github_admin_pat");
       if (savedToken) document.getElementById("patToken").value = savedToken;
       loadLicenses(false);
 
-      // Auto-refresh every 5 seconds in the background
+      // Background poll every 10 seconds (only if no unsaved changes are queued)
       setInterval(() => {
-        loadLicenses(true);
-      }, 5000);
+        if (!hasUnsavedChanges) {
+          loadLicenses(true);
+        }
+      }, 10000);
     });
 
     function saveToken() {
@@ -243,13 +353,45 @@
       el.textContent = msg;
     }
 
+    function markDirty(changeCountDelta = 1) {
+      hasUnsavedChanges = true;
+      pendingChangesCount += changeCountDelta;
+      if (pendingChangesCount < 0) pendingChangesCount = 0;
+
+      const confirmBtn = document.getElementById("confirmBtn");
+      const badge = document.getElementById("pendingCountBadge");
+
+      if (hasUnsavedChanges && pendingChangesCount > 0) {
+        confirmBtn.disabled = false;
+        badge.style.display = "inline-block";
+        badge.textContent = pendingChangesCount;
+        showStatus(`${pendingChangesCount} unsaved update(s) pending. Click "Confirm Updates" to push to GitHub.`, "#d35400");
+      } else {
+        hasUnsavedChanges = false;
+        confirmBtn.disabled = true;
+        badge.style.display = "none";
+      }
+    }
+
     async function loadLicenses(silent = false) {
+      if (hasUnsavedChanges && silent) return; // Skip background auto-poll if local changes exist
+
       if (!silent) showStatus("Fetching latest license registry...", "#7f8c8d");
       try {
         const res = await fetch(`${CONFIG.RAW_URL}?t=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) throw new Error("Failed to fetch licenses.json");
-        licenseRegistry = await res.json();
         
+        const rawData = await res.json();
+        
+        if (Array.isArray(rawData)) {
+          licenseRegistry = { licenses: rawData };
+        } else if (rawData && Array.isArray(rawData.licenses)) {
+          licenseRegistry = rawData;
+        } else {
+          licenseRegistry = { licenses: [] };
+        }
+
+        // Fetch SHA for direct commit API
         const token = localStorage.getItem("github_admin_pat");
         if (token && !fileSha) {
           const apiRes = await fetch(CONFIG.API_URL, {
@@ -278,9 +420,9 @@
       const pendingList = licenseRegistry.licenses.filter(l => l.status === "pending");
       const activeList = licenseRegistry.licenses.filter(l => l.status !== "pending");
 
-      // Render Pending
+      // Render Pending Table
       if (pendingList.length === 0) {
-        pendingTbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted);">No pending requests.</td></tr>`;
+        pendingTbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">No pending requests.</td></tr>`;
       } else {
         pendingList.forEach((item) => {
           const globalIndex = licenseRegistry.licenses.indexOf(item);
@@ -288,22 +430,26 @@
           const machineHtml = machines.map(m => `<code>${m}</code>`).join('<br>');
 
           const tr = document.createElement("tr");
+          if (item._modified) tr.className = "status-modified";
           tr.innerHTML = `
-            <td>${item.email}</td>
+            <td class="checkbox-col"><input type="checkbox" class="pending-chk" data-index="${globalIndex}"></td>
+            <td>${item.email} ${item._modified ? '<span class="badge-pending-change">Pending Update</span>' : ''}</td>
             <td>${machineHtml}</td>
             <td>
-              <input type="date" id="expiry_${globalIndex}" style="margin-right:6px;" value="${getDefaultExpiry()}">
-              <button class="btn-success" onclick="approveRequest(${globalIndex})">Approve</button>
-              <button class="btn-danger" onclick="deleteLicense(${globalIndex})">Reject</button>
+              <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                <input type="date" id="expiry_${globalIndex}" style="width:130px;" value="${item.expires || getDefaultExpiry()}">
+                <button class="btn-success" onclick="queueApprove(${globalIndex})">Approve</button>
+                <button class="btn-danger" onclick="queueDelete(${globalIndex})">Reject</button>
+              </div>
             </td>
           `;
           pendingTbody.appendChild(tr);
         });
       }
 
-      // Render Active / Managed
+      // Render Active / Managed Table
       if (activeList.length === 0) {
-        activeTbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No managed licenses.</td></tr>`;
+        activeTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No managed licenses.</td></tr>`;
       } else {
         activeList.forEach((item) => {
           const globalIndex = licenseRegistry.licenses.indexOf(item);
@@ -312,14 +458,20 @@
           const isSuspended = item.status === "suspended";
 
           const tr = document.createElement("tr");
+          if (item._modified) tr.className = "status-modified";
           tr.innerHTML = `
-            <td>${item.email}</td>
+            <td class="checkbox-col"><input type="checkbox" class="active-chk" data-index="${globalIndex}"></td>
+            <td>${item.email} ${item._modified ? '<span class="badge-pending-change">Pending Update</span>' : ''}</td>
             <td>${machineHtml}</td>
-            <td>${item.expires || "Never"}</td>
+            <td>
+              <input type="date" value="${item.expires || ''}" style="width:130px;" onchange="updateExpiryInline(${globalIndex}, this.value)">
+            </td>
             <td><span class="status-${item.status}">${item.status.toUpperCase()}</span></td>
             <td>
-              <button onclick="toggleStatus(${globalIndex})">${isSuspended ? 'Activate' : 'Suspend'}</button>
-              <button class="btn-danger" onclick="deleteLicense(${globalIndex})">Delete</button>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button onclick="queueToggleStatus(${globalIndex})">${isSuspended ? 'Activate' : 'Suspend'}</button>
+                <button class="btn-danger" onclick="queueDelete(${globalIndex})">Delete</button>
+              </div>
             </td>
           `;
           activeTbody.appendChild(tr);
@@ -333,61 +485,129 @@
       return d.toISOString().split('T')[0];
     }
 
-    async function approveRequest(index) {
-      const expiryInput = document.getElementById(`expiry_${index}`);
-      const expiryDate = expiryInput ? expiryInput.value : "";
-      
-      if (!expiryDate) {
-        alert("Please select an expiration date.");
-        return;
-      }
+    function toggleSelectAll(type, checked) {
+      const selector = type === 'pending' ? '.pending-chk' : '.active-chk';
+      document.querySelectorAll(selector).forEach(chk => chk.checked = checked);
+    }
 
+    // --- Action Queuing (In-Memory Only) ---
+
+    function queueApprove(index) {
+      const expiryInput = document.getElementById(`expiry_${index}`);
+      const expiryDate = expiryInput ? expiryInput.value : getDefaultExpiry();
+      
       licenseRegistry.licenses[index].status = "active";
       licenseRegistry.licenses[index].expires = expiryDate;
+      licenseRegistry.licenses[index]._modified = true;
+      
+      markDirty(1);
       renderTables();
-      showStatus("Approved! Syncing to GitHub in background...", "green");
-
-      await commitChanges(`Approve access for ${licenseRegistry.licenses[index].email}`);
     }
 
-    async function toggleStatus(index) {
+    function updateExpiryInline(index, newDate) {
+      licenseRegistry.licenses[index].expires = newDate;
+      licenseRegistry.licenses[index]._modified = true;
+      markDirty(1);
+      renderTables();
+    }
+
+    function queueToggleStatus(index) {
       const current = licenseRegistry.licenses[index].status;
       licenseRegistry.licenses[index].status = (current === "active") ? "suspended" : "active";
+      licenseRegistry.licenses[index]._modified = true;
+      markDirty(1);
       renderTables();
-      showStatus("Status toggled! Syncing in background...", "green");
-
-      await commitChanges(`Toggle license status for ${licenseRegistry.licenses[index].email}`);
     }
 
-    async function deleteLicense(index) {
-      if (!confirm("Are you sure you want to delete this record?")) return;
-      const email = licenseRegistry.licenses[index].email;
+    function queueDelete(index) {
       licenseRegistry.licenses.splice(index, 1);
+      markDirty(1);
       renderTables();
-      showStatus("Deleted! Syncing in background...", "green");
-
-      await commitChanges(`Delete license record for ${email}`);
     }
 
-    async function commitChanges(commitMessage) {
+    // --- Batch Operations ---
+
+    function batchApproveSelected() {
+      const checkboxes = document.querySelectorAll('.pending-chk:checked');
+      if (checkboxes.length === 0) return alert("Select at least one pending request.");
+
+      let count = 0;
+      checkboxes.forEach(chk => {
+        const index = parseInt(chk.dataset.index, 10);
+        const expiryInput = document.getElementById(`expiry_${index}`);
+        const expiryDate = expiryInput ? expiryInput.value : getDefaultExpiry();
+        
+        licenseRegistry.licenses[index].status = "active";
+        licenseRegistry.licenses[index].expires = expiryDate;
+        licenseRegistry.licenses[index]._modified = true;
+        count++;
+      });
+
+      document.getElementById('selectAllPending').checked = false;
+      markDirty(count);
+      renderTables();
+    }
+
+    function batchDeletePendingSelected() {
+      const checkboxes = Array.from(document.querySelectorAll('.pending-chk:checked'));
+      if (checkboxes.length === 0) return alert("Select at least one pending request to reject.");
+
+      // Delete from highest index down so splice offsets don't corrupt indices
+      const indices = checkboxes.map(chk => parseInt(chk.dataset.index, 10)).sort((a, b) => b - a);
+      indices.forEach(idx => licenseRegistry.licenses.splice(idx, 1));
+
+      document.getElementById('selectAllPending').checked = false;
+      markDirty(indices.length);
+      renderTables();
+    }
+
+    function batchDeleteActiveSelected() {
+      const checkboxes = Array.from(document.querySelectorAll('.active-chk:checked'));
+      if (checkboxes.length === 0) return alert("Select at least one active license to delete.");
+
+      if (!confirm(`Are you sure you want to delete ${checkboxes.length} selected license(s)?`)) return;
+
+      const indices = checkboxes.map(chk => parseInt(chk.dataset.index, 10)).sort((a, b) => b - a);
+      indices.forEach(idx => licenseRegistry.licenses.splice(idx, 1));
+
+      document.getElementById('selectAllActive').checked = false;
+      markDirty(indices.length);
+      renderTables();
+    }
+
+    // --- Commit All Pending Updates to GitHub ---
+
+    async function confirmAllUpdates() {
       const token = document.getElementById("patToken").value.trim();
       if (!token) {
-        alert("Please enter and save your GitHub Personal Access Token at the top of the dashboard first!");
+        alert("Please enter and save your GitHub Personal Access Token first!");
         return;
       }
 
+      showStatus("Syncing batch updates to GitHub...", "#f39c12");
+      const confirmBtn = document.getElementById("confirmBtn");
+      confirmBtn.disabled = true;
+
       try {
-        if (!fileSha) {
-          const metaRes = await fetch(CONFIG.API_URL, {
-            headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
-          });
-          if (metaRes.ok) {
-            const meta = await metaRes.json();
-            fileSha = meta.sha;
-          }
+        // Clean temporary metadata tags before saving
+        const sanitizedLicenses = licenseRegistry.licenses.map(l => {
+          const clean = { ...l };
+          delete clean._modified;
+          return clean;
+        });
+
+        const payload = { licenses: sanitizedLicenses };
+
+        // Ensure fresh SHA
+        const metaRes = await fetch(CONFIG.API_URL, {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
+        });
+        if (metaRes.ok) {
+          const meta = await metaRes.json();
+          fileSha = meta.sha;
         }
 
-        const updatedContent = btoa(unescape(encodeURIComponent(JSON.stringify(licenseRegistry, null, 2))));
+        const updatedContent = btoa(unescape(encodeURIComponent(JSON.stringify(payload, null, 2))));
 
         const putRes = await fetch(CONFIG.API_URL, {
           method: "PUT",
@@ -397,7 +617,7 @@
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            message: commitMessage,
+            message: `Batch update license registry (${pendingChangesCount} changes)`,
             content: updatedContent,
             sha: fileSha
           })
@@ -405,16 +625,22 @@
 
         if (!putRes.ok) {
           const errData = await putRes.json();
-          throw new Error(errData.message || "Failed to commit changes.");
+          throw new Error(errData.message || "Failed to commit changes to GitHub.");
         }
 
         const newMeta = await putRes.json();
         fileSha = newMeta.content.sha;
 
-        showStatus("Changes successfully synced to GitHub!", "green");
+        // Reset tracking flags
+        hasUnsavedChanges = false;
+        pendingChangesCount = 0;
+        markDirty(0);
+
+        showStatus("All updates successfully pushed to GitHub!", "green");
+        await loadLicenses(false);
       } catch (err) {
         showStatus("Sync failed: " + err.message, "red");
-        loadLicenses(false);
+        confirmBtn.disabled = false;
       }
     }
   </script>
