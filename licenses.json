@@ -2,9 +2,12 @@
   "licenses": [
     {
       "email": "vanbeau1@gmail.com",
-      "machineId": "6627df62-84e9-4b1e-af5a-2dd4cd7da4b7",
       "expires": "2060-12-06",
-      "status": "active"
+      "status": "pending",
+      "machineIds": [
+        "6627df62-84e9-4b1e-af5a-2dd4cd7da4b7",
+        "ID-397DAB80DEB2D65B"
+      ]
     }
   ]
 }
