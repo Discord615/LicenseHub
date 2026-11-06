@@ -15,14 +15,6 @@
       ],
       "expires": "2031-11-06",
       "status": "active"
-    },
-    {
-      "email": "vanbeau1@gmail.com",
-      "machineIds": [
-        "ID-82CFFABBFAB40F33"
-      ],
-      "expires": "2027-11-06",
-      "status": "active"
     }
   ]
 }
