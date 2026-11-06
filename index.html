@@ -270,7 +270,7 @@
       <div id="statusMessage"></div>
     </div>
 
-    <!-- Protected Management Interface (Hidden until unlocked) -->
+    <!-- Protected Management Interface -->
     <div id="protectedContent" class="hidden">
       <!-- Pending Access Requests -->
       <div class="card">
@@ -431,13 +431,35 @@
       if (hasUnsavedChanges && silent) return;
 
       const token = sessionStorage.getItem("github_admin_pat");
-      if (!silent) showStatus("Fetching latest license registry...", "#7f8c8d");
+      if (!silent) showStatus("Fetching real-time license registry...", "#7f8c8d");
 
       try {
-        const res = await fetch(`${CONFIG.RAW_URL}?t=${Date.now()}`, { cache: "no-store" });
-        if (!res.ok) throw new Error("Failed to fetch licenses.json");
+        let rawData;
         
-        const rawData = await res.json();
+        // INSTANT REFLECTION FIX: If authenticated, fetch via GitHub API directly (bypasses raw CDN cache)
+        if (token) {
+          const apiRes = await fetch(`${CONFIG.API_URL}?cachebust=${Date.now()}`, {
+            headers: { 
+              Authorization: `Bearer ${token}`, 
+              Accept: "application/vnd.github+json",
+              "Cache-Control": "no-cache"
+            }
+          });
+
+          if (!apiRes.ok) throw new Error("Failed to fetch licenses via GitHub API.");
+
+          const fileMeta = await apiRes.json();
+          fileSha = fileMeta.sha;
+
+          // Decode base64 content safely
+          const decoded = decodeURIComponent(escape(atob(fileMeta.content)));
+          rawData = JSON.parse(decoded);
+        } else {
+          // Fallback to Raw CDN for unauthenticated requests
+          const res = await fetch(`${CONFIG.RAW_URL}?t=${Date.now()}`, { cache: "no-store" });
+          if (!res.ok) throw new Error("Failed to fetch licenses.json");
+          rawData = await res.json();
+        }
         
         if (Array.isArray(rawData)) {
           licenseRegistry = { licenses: rawData };
@@ -445,16 +467,6 @@
           licenseRegistry = rawData;
         } else {
           licenseRegistry = { licenses: [] };
-        }
-
-        if (token && !fileSha) {
-          const apiRes = await fetch(CONFIG.API_URL, {
-            headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
-          });
-          if (apiRes.ok) {
-            const fileMeta = await apiRes.json();
-            fileSha = fileMeta.sha;
-          }
         }
 
         renderTables();
@@ -471,7 +483,6 @@
       pendingTbody.innerHTML = "";
       activeTbody.innerHTML = "";
 
-      // Explicitly check status: items without explicit status or status === "pending" go to pending list
       const pendingList = licenseRegistry.licenses.filter(l => !l.status || l.status === "pending");
       const activeList = licenseRegistry.licenses.filter(l => l.status && l.status !== "pending");
 
@@ -643,7 +654,7 @@
 
         const payload = { licenses: sanitizedLicenses };
 
-        const metaRes = await fetch(CONFIG.API_URL, {
+        const metaRes = await fetch(`${CONFIG.API_URL}?t=${Date.now()}`, {
           headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
         });
         if (metaRes.ok) {
