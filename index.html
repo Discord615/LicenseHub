@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com; img-src 'none'; base-uri 'none'; form-action 'none'">
   <title>BanDaliSIMS Admin Dashboard</title>
   <style>
     :root {
@@ -281,6 +282,7 @@
             <button class="btn-danger" onclick="batchDeletePendingSelected()">Reject Selected</button>
           </div>
         </div>
+        <div id="requestNotice" style="margin-bottom:8px; font-size:12px; color:var(--text-muted);"></div>
         <div class="table-container">
           <table>
             <thead>
@@ -329,9 +331,13 @@
 
   <script>
     const CONFIG = {
-      REPO: "Discord615/LicenseHub",
-      RAW_URL: "https://raw.githubusercontent.com/Discord615/LicenseHub/main/licenses.json",
-      API_URL: "https://api.github.com/repos/Discord615/LicenseHub/contents/licenses.json"
+      // Admin token must be able to WRITE licenses.json (public repo the plugin token has no grant on)
+      API_URL: "https://api.github.com/repos/Discord615/LicenseHub/contents/licenses.json",
+      // Private repo where the plugin drops create-only request files
+      REQUEST_API: "https://api.github.com/repos/Discord615/LicenseHub-Requests/contents/requests",
+      ADMIN_GITHUB_USERNAME: "Discord615",
+      IDLE_LOCK_MS: 10 * 60 * 1000,
+      MAX_REQUEST_FILES: 200
     };
 
     let licenseRegistry = { licenses: [] };
@@ -340,6 +346,12 @@
     let pendingChangesCount = 0;
     let baseSnapshot = [];   // registry exactly as last loaded; admin edits are diffed against this
     let pollTimer = null;
+    let adminToken = null;          // memory only: never written to sessionStorage/localStorage
+    let lastActivity = Date.now();
+    let requestRows = [];           // pending requests from the private requests repo, grouped by email
+    let requestOps = [];            // approve/reject decisions queued by the admin
+    let staleRequests = [];         // request files whose device is already registered (safe to delete)
+    const requestCache = new Map(); // blob sha -> {email, machineId} | null (invalid)
 
     function esc(value) {
       return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -347,13 +359,14 @@
     function emailKey(l) { return String((l && l.email) || "").toLowerCase(); }
     function stripMeta(l) { const c = { ...l }; delete c._modified; return c; }
 
-    document.addEventListener("DOMContentLoaded", () => {
-      const savedToken = sessionStorage.getItem("github_admin_pat");
-      if (savedToken) {
-        document.getElementById("patToken").value = savedToken;
-        unlockDashboard(true);
+    ['click', 'keydown', 'mousemove', 'touchstart'].forEach(ev =>
+      document.addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true }));
+    setInterval(() => {
+      if (adminToken && Date.now() - lastActivity > CONFIG.IDLE_LOCK_MS) {
+        lockDashboard();
+        showStatus("Locked after inactivity. Enter your token to continue.", "#7f8c8d");
       }
-    });
+    }, 15000);
 
     function showStatus(msg, color) {
       const el = document.getElementById("statusMessage");
@@ -361,52 +374,61 @@
       el.textContent = msg;
     }
 
-    async function unlockDashboard(isAuto = false) {
-      const token = document.getElementById("patToken").value.trim();
-      if (!token) {
-        showStatus("Please enter your GitHub Personal Access Token.", "red");
-        return;
-      }
+    // Proof of WRITE authorization on licenses.json without changing anything: replay the current
+    // content with a deliberately wrong sha. GitHub checks authorization first, then the sha:
+    // an authorized writer gets 409/422 (nothing is committed); any other token gets 401/403/404.
+    // The plugin token has no grant on this repo, so it can never pass.
+    async function verifyWriteAccess(token) {
+      const h = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+      const getRes = await fetch(`${CONFIG.API_URL}?t=${Date.now()}`, { headers: h, cache: "no-store" });
+      if (!getRes.ok) throw new Error("This token cannot access the licenses repository.");
+      const meta = await getRes.json();
+      const probe = await fetch(CONFIG.API_URL, {
+        method: "PUT",
+        headers: { ...h, "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "auth probe (never committed)", content: String(meta.content).replace(/\n/g, ""), sha: "0".repeat(40) })
+      });
+      if (probe.status !== 409 && probe.status !== 422) throw new Error("This token is not authorized to modify licenses.json.");
+      const reqRes = await fetch(`${CONFIG.REQUEST_API}?t=${Date.now()}`, { headers: h, cache: "no-store" });
+      if (!reqRes.ok && reqRes.status !== 404) throw new Error("This token cannot access the requests repository.");
+    }
 
-      if (!isAuto) showStatus("Verifying admin identity...", "#7f8c8d");
-
+    async function unlockDashboard() {
+      const input = document.getElementById("patToken");
+      const token = input.value.trim();
+      if (!token) { showStatus("Please enter your GitHub Personal Access Token.", "red"); return; }
+      showStatus("Verifying admin access...", "#7f8c8d");
       try {
         const testRes = await fetch("https://api.github.com/user", {
           headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
         });
-
         if (!testRes.ok) throw new Error("Invalid GitHub Personal Access Token.");
-
         const userData = await testRes.json();
-        const ADMIN_GITHUB_USERNAME = "Discord615";
-        if (userData.login.toLowerCase() !== ADMIN_GITHUB_USERNAME.toLowerCase()) {
+        if (String(userData.login).toLowerCase() !== CONFIG.ADMIN_GITHUB_USERNAME.toLowerCase()) {
           throw new Error(`Access denied. Token belongs to '@${userData.login}', not the administrator.`);
         }
+        await verifyWriteAccess(token);
 
-        sessionStorage.setItem("github_admin_pat", token);
-
+        adminToken = token;
+        input.value = "";
+        lastActivity = Date.now();
         document.getElementById("authBox").classList.add("hidden");
         document.getElementById("protectedContent").classList.remove("hidden");
         document.getElementById("headerActions").classList.remove("hidden");
-
         loadLicenses(false);
-
-        if (!pollTimer) pollTimer = setInterval(() => {
-          if (!hasUnsavedChanges && !document.getElementById("protectedContent").classList.contains("hidden")) {
-            loadLicenses(true);
-          }
-        }, 10000);
-
+        if (!pollTimer) pollTimer = setInterval(() => { if (adminToken && !hasUnsavedChanges) loadLicenses(true); }, 10000);
       } catch (err) {
-        sessionStorage.removeItem("github_admin_pat");
+        adminToken = null;
         showStatus("Authentication failed: " + err.message, "red");
       }
     }
 
     function lockDashboard() {
-      sessionStorage.removeItem("github_admin_pat");
+      adminToken = null;
       hasUnsavedChanges = false;
       pendingChangesCount = 0;
+      requestRows = []; requestOps = []; staleRequests = []; requestCache.clear();
+      licenseRegistry = { licenses: [] }; baseSnapshot = [];
 
       document.getElementById("authBox").classList.remove("hidden");
       document.getElementById("protectedContent").classList.add("hidden");
@@ -435,45 +457,83 @@
       }
     }
 
+    async function loadRequests(token, licenses) {
+      const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+      const res = await fetch(`${CONFIG.REQUEST_API}?t=${Date.now()}`, { headers, cache: "no-store" });
+      if (res.status === 404) return { rows: [], stale: [], ignored: 0, overflow: 0 };
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const list = await res.json();
+      if (!Array.isArray(list)) throw new Error("unexpected response");
+
+      // Anything in this repo is attacker-controllable: strict name/size/schema checks, hard cap.
+      const files = list.filter(f => f && f.type === "file" && /^[0-9a-f]{32}\.json$/.test(f.name) && f.size <= 2048);
+      const shown = files.slice(0, CONFIG.MAX_REQUEST_FILES);
+      let ignored = list.length - files.length;
+
+      const todo = shown.filter(f => !requestCache.has(f.sha));
+      for (let i = 0; i < todo.length; i += 10) {
+        await Promise.all(todo.slice(i, i + 10).map(async f => {
+          let parsed = null;
+          try {
+            const r = await fetch(`${CONFIG.REQUEST_API}/${f.name}`, { headers });
+            if (r.ok) {
+              const j = JSON.parse(decodeURIComponent(escape(atob((await r.json()).content))));
+              const email = String(j.email || "").trim().toLowerCase();
+              if (email.length <= 254 && /^[^\s@<>"'`]+@[^\s@<>"'`]+\.[^\s@<>"'`]+$/.test(email) && /^ID-[0-9A-F]{16}$/.test(String(j.machineId))) {
+                parsed = { email, machineId: j.machineId };
+              }
+            }
+          } catch (e) { /* leave null */ }
+          requestCache.set(f.sha, parsed);
+        }));
+      }
+
+      const known = new Map(licenses.map(l => [emailKey(l), new Set(machinesOf(l))]));
+      const byEmail = new Map();
+      const stale = [];
+      for (const f of shown) {
+        const p = requestCache.get(f.sha);
+        if (!p) { ignored++; continue; }
+        const dev = { id: p.machineId, name: f.name, sha: f.sha };
+        const have = known.get(p.email);
+        if (have && have.has(p.machineId)) { stale.push(dev); continue; }
+        if (!byEmail.has(p.email)) byEmail.set(p.email, { email: p.email, key: p.email, existing: known.has(p.email), devices: [] });
+        byEmail.get(p.email).devices.push(dev);
+      }
+      return { rows: [...byEmail.values()], stale, ignored, overflow: files.length - shown.length };
+    }
+
     async function loadLicenses(silent = false) {
       if (hasUnsavedChanges && silent) return;
-
-      const token = sessionStorage.getItem("github_admin_pat");
+      const token = adminToken;
+      if (!token) return;
       if (!silent) showStatus("Fetching real-time license registry...", "#7f8c8d");
 
       try {
-        let rawData;
-        
-        if (token) {
-          const apiRes = await fetch(`${CONFIG.API_URL}?t=${Date.now()}`, {
-            headers: { 
-              Authorization: `Bearer ${token}`, 
-              Accept: "application/vnd.github+json"
-            }
-          });
+        const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+        const apiRes = await fetch(`${CONFIG.API_URL}?t=${Date.now()}`, { headers, cache: "no-store" });
+        if (!apiRes.ok) throw new Error("Failed to fetch licenses via GitHub API.");
+        const fileMeta = await apiRes.json();
+        fileSha = fileMeta.sha;
+        const rawData = JSON.parse(decodeURIComponent(escape(atob(fileMeta.content))));
+        if (Array.isArray(rawData)) licenseRegistry = { licenses: rawData };
+        else if (rawData && Array.isArray(rawData.licenses)) licenseRegistry = rawData;
+        else licenseRegistry = { licenses: [] };
 
-          if (!apiRes.ok) throw new Error("Failed to fetch licenses via GitHub API.");
-
-          const fileMeta = await apiRes.json();
-          fileSha = fileMeta.sha;
-
-          const decoded = decodeURIComponent(escape(atob(fileMeta.content)));
-          rawData = JSON.parse(decoded);
-        } else {
-          const res = await fetch(`${CONFIG.RAW_URL}?t=${Date.now()}`, { cache: "no-store" });
-          if (!res.ok) throw new Error("Failed to fetch licenses.json");
-          rawData = await res.json();
+        let notice = "";
+        try {
+          const r = await loadRequests(token, licenseRegistry.licenses);
+          requestRows = r.rows; staleRequests = r.stale;
+          if (r.ignored) notice += `${r.ignored} invalid or oversized request file(s) ignored. `;
+          if (r.overflow) notice += `${r.overflow} request file(s) hidden by the ${CONFIG.MAX_REQUEST_FILES}-file cap (possible spam). `;
+        } catch (e) {
+          requestRows = []; staleRequests = [];
+          notice = "Could not load access requests: " + e.message;
         }
-        
-        if (Array.isArray(rawData)) {
-          licenseRegistry = { licenses: rawData };
-        } else if (rawData && Array.isArray(rawData.licenses)) {
-          licenseRegistry = rawData;
-        } else {
-          licenseRegistry = { licenses: [] };
-        }
+        document.getElementById("requestNotice").textContent = notice;
 
         baseSnapshot = JSON.parse(JSON.stringify(licenseRegistry.licenses));
+        requestOps = [];
         hasUnsavedChanges = false;
         pendingChangesCount = 0;
         markDirty(0);
@@ -485,6 +545,11 @@
     }
 
     function renderTables() {
+      renderTablesCore();
+      renderRequestRows(document.getElementById("pendingTableBody"));
+    }
+
+    function renderTablesCore() {
       const pendingTbody = document.getElementById("pendingTableBody");
       const activeTbody = document.getElementById("activeTableBody");
       
@@ -551,6 +616,45 @@
       }
     }
 
+    function renderRequestRows(tbody) {
+      const rows = requestRows.filter(r => !r._done);
+      if (rows.length && tbody.querySelector("td[colspan]")) tbody.innerHTML = "";
+      rows.forEach(r => {
+        const ri = requestRows.indexOf(r);
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="checkbox-col"><input type="checkbox" class="req-chk" data-ri="${ri}"></td>
+          <td>${esc(r.email)} <span class="badge-pending-change">${r.existing ? "New device for EXISTING license" : "New request"}</span></td>
+          <td>${r.devices.map(d => `<code>${esc(d.id)}</code>`).join("<br>")}</td>
+          <td>
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+              ${r.existing ? "" : `<input type="date" id="reqexp_${ri}" style="width:130px;" value="${esc(getDefaultExpiry())}">`}
+              <button class="btn-success" onclick="queueApproveRequest(${ri})">Approve</button>
+              <button class="btn-danger" onclick="queueRejectRequest(${ri})">Reject</button>
+            </div>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function approveRequestAt(ri) {
+      const r = requestRows[ri];
+      if (!r || r._done) return false;
+      const el = document.getElementById(`reqexp_${ri}`);
+      requestOps.push({ kind: "approve", key: r.key, email: r.email, devices: r.devices, expires: r.existing ? "" : ((el && el.value) || getDefaultExpiry()) });
+      r._done = true;
+      return true;
+    }
+    function rejectRequestAt(ri) {
+      const r = requestRows[ri];
+      if (!r || r._done) return false;
+      requestOps.push({ kind: "reject", key: r.key, email: r.email, devices: r.devices });
+      r._done = true;
+      return true;
+    }
+    function queueApproveRequest(ri) { if (approveRequestAt(ri)) { markDirty(1); renderTables(); } }
+    function queueRejectRequest(ri) { if (rejectRequestAt(ri)) { markDirty(1); renderTables(); } }
+
     function getDefaultExpiry() {
       const d = new Date();
       d.setFullYear(d.getFullYear() + 1);
@@ -558,7 +662,7 @@
     }
 
     function toggleSelectAll(type, checked) {
-      const selector = type === 'pending' ? '.pending-chk' : '.active-chk';
+      const selector = type === 'pending' ? '.pending-chk, .req-chk' : '.active-chk';
       document.querySelectorAll(selector).forEach(chk => chk.checked = checked);
     }
 
@@ -596,20 +700,20 @@
     }
 
     function batchApproveSelected() {
-      const checkboxes = document.querySelectorAll('.pending-chk:checked');
-      if (checkboxes.length === 0) return alert("Select at least one pending request.");
+      const lic = document.querySelectorAll('.pending-chk:checked');
+      const reqs = document.querySelectorAll('.req-chk:checked');
+      if (lic.length + reqs.length === 0) return alert("Select at least one pending request.");
 
       let count = 0;
-      checkboxes.forEach(chk => {
+      lic.forEach(chk => {
         const index = parseInt(chk.dataset.index, 10);
         const expiryInput = document.getElementById(`expiry_${index}`);
-        const expiryDate = expiryInput ? expiryInput.value : getDefaultExpiry();
-        
         licenseRegistry.licenses[index].status = "active";
-        licenseRegistry.licenses[index].expires = expiryDate;
+        licenseRegistry.licenses[index].expires = expiryInput ? expiryInput.value : getDefaultExpiry();
         licenseRegistry.licenses[index]._modified = true;
         count++;
       });
+      reqs.forEach(chk => { if (approveRequestAt(parseInt(chk.dataset.ri, 10))) count++; });
 
       document.getElementById('selectAllPending').checked = false;
       markDirty(count);
@@ -617,14 +721,17 @@
     }
 
     function batchDeletePendingSelected() {
-      const checkboxes = Array.from(document.querySelectorAll('.pending-chk:checked'));
-      if (checkboxes.length === 0) return alert("Select at least one pending request to reject.");
+      const lic = Array.from(document.querySelectorAll('.pending-chk:checked'));
+      const reqs = Array.from(document.querySelectorAll('.req-chk:checked'));
+      if (lic.length + reqs.length === 0) return alert("Select at least one pending request to reject.");
 
-      const indices = checkboxes.map(chk => parseInt(chk.dataset.index, 10)).sort((a, b) => b - a);
+      const indices = lic.map(chk => parseInt(chk.dataset.index, 10)).sort((a, b) => b - a);
       indices.forEach(idx => licenseRegistry.licenses.splice(idx, 1));
+      let count = indices.length;
+      reqs.forEach(chk => { if (rejectRequestAt(parseInt(chk.dataset.ri, 10))) count++; });
 
       document.getElementById('selectAllPending').checked = false;
-      markDirty(indices.length);
+      markDirty(count);
       renderTables();
     }
 
@@ -685,11 +792,42 @@
       return { licenses, skipped };
     }
 
+    function applyApprovals(licenses, approvals) {
+      for (const a of approvals) {
+        const ids = a.devices.map(d => d.id);
+        const idx = licenses.findIndex(l => emailKey(l) === a.key);
+        if (idx === -1) {
+          licenses.push({ email: a.email, machineIds: ids, expires: a.expires, status: "active" });
+        } else {
+          const cur = licenses[idx];
+          const have = machinesOf(cur);
+          cur.machineIds = [...have, ...ids.filter(i => !have.includes(i))]; // existing status/expiry untouched
+          delete cur.machineId;
+        }
+      }
+    }
+
+    async function deleteRequestFile(token, f) {
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        try {
+          const res = await fetch(`${CONFIG.REQUEST_API}/${f.name}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+            body: JSON.stringify({ message: "Process access request", sha: f.sha })
+          });
+          if (res.ok || res.status === 404) return true;
+          if (res.status !== 409) return false;
+        } catch (e) { /* retry */ }
+        await sleep(300 * attempt + Math.random() * 300);
+      }
+      return false;
+    }
+
     function fatalError(message) { const e = new Error(message); e.fatal = true; return e; }
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
     async function confirmAllUpdates() {
-      const token = sessionStorage.getItem("github_admin_pat");
+      const token = adminToken;
       if (!token) {
         alert("Session expired. Please re-authenticate.");
         lockDashboard();
@@ -697,7 +835,8 @@
       }
 
       const ops = computeAdminOps(baseSnapshot, licenseRegistry.licenses);
-      if (ops.length === 0) {
+      const approvals = requestOps.filter(o => o.kind === "approve");
+      if (ops.length === 0 && requestOps.length === 0) {
         showStatus("No changes to save.", "#7f8c8d");
         await loadLicenses(false);
         return;
@@ -709,7 +848,7 @@
 
       const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
       const MAX_ATTEMPTS = 6;
-      let committed = false;
+      let committed = ops.length === 0 && approvals.length === 0; // reject-only changes need no licenses.json commit
       let skipped = [];
       let lastError = "";
 
@@ -727,13 +866,14 @@
           if (!Array.isArray(remoteList)) throw fatalError("The registry on GitHub has an unexpected format; refusing to overwrite it.");
 
           const merged = applyAdminOps(remoteList, ops);
+          applyApprovals(merged.licenses, approvals);
           skipped = merged.skipped;
 
           const putRes = await fetch(CONFIG.API_URL, {
             method: "PUT",
             headers: { ...headers, "Content-Type": "application/json" },
             body: JSON.stringify({
-              message: `Batch update license registry (${ops.length} change(s))`,
+              message: `Batch update license registry (${ops.length + approvals.length} change(s))`,
               content: btoa(unescape(encodeURIComponent(JSON.stringify({ licenses: merged.licenses }, null, 2)))),
               sha: meta.sha
             })
@@ -757,7 +897,13 @@
       }
 
       if (committed) {
+        // licenses.json is committed first; only then are request files consumed (safe to re-run)
+        let failedDeletes = 0;
+        for (const f of requestOps.flatMap(o => o.devices).concat(staleRequests)) {
+          if (!(await deleteRequestFile(token, f))) failedDeletes++;
+        }
         let note = "All updates pushed to GitHub.";
+        if (failedDeletes) note += `\n\n${failedDeletes} request file(s) could not be removed; they stay harmless and are retried next time.`;
         if (skipped.length) {
           note += "\n\nNot applied, because a new device requested access after you loaded this page. Review and retry:\n" + skipped.join("\n");
         }
