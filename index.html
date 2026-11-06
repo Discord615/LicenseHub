@@ -436,13 +436,12 @@
       try {
         let rawData;
         
-        // INSTANT REFLECTION FIX: If authenticated, fetch via GitHub API directly (bypasses raw CDN cache)
+        // Fetch via GitHub Contents API using standard query-parameter cache-busting (CORS safe)
         if (token) {
-          const apiRes = await fetch(`${CONFIG.API_URL}?cachebust=${Date.now()}`, {
+          const apiRes = await fetch(`${CONFIG.API_URL}?t=${Date.now()}`, {
             headers: { 
               Authorization: `Bearer ${token}`, 
-              Accept: "application/vnd.github+json",
-              "Cache-Control": "no-cache"
+              Accept: "application/vnd.github+json"
             }
           });
 
@@ -451,11 +450,9 @@
           const fileMeta = await apiRes.json();
           fileSha = fileMeta.sha;
 
-          // Decode base64 content safely
           const decoded = decodeURIComponent(escape(atob(fileMeta.content)));
           rawData = JSON.parse(decoded);
         } else {
-          // Fallback to Raw CDN for unauthenticated requests
           const res = await fetch(`${CONFIG.RAW_URL}?t=${Date.now()}`, { cache: "no-store" });
           if (!res.ok) throw new Error("Failed to fetch licenses.json");
           rawData = await res.json();
