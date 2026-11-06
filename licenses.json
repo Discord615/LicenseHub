@@ -3,10 +3,11 @@
     {
       "email": "vanbeau1@gmail.com",
       "machineIds": [
-        "ID-397DAB80DEB2D65B"
+        "ID-397DAB80DEB2D65B",
+        "ID-82CFFABBFAB40F33"
       ],
       "expires": "2027-11-05",
-      "status": "active"
+      "status": "pending"
     }
   ]
 }
