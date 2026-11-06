@@ -8,6 +8,14 @@
       ],
       "expires": "2027-11-05",
       "status": "active"
+    },
+    {
+      "email": "julianantoniosison@gmail.com",
+      "machineIds": [
+        "ID-E86BD04CED0ED3BF"
+      ],
+      "expires": "",
+      "status": "pending"
     }
   ]
 }
