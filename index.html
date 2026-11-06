@@ -338,6 +338,14 @@
     let fileSha = "";
     let hasUnsavedChanges = false;
     let pendingChangesCount = 0;
+    let baseSnapshot = [];   // registry exactly as last loaded; admin edits are diffed against this
+    let pollTimer = null;
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+    function emailKey(l) { return String((l && l.email) || "").toLowerCase(); }
+    function stripMeta(l) { const c = { ...l }; delete c._modified; return c; }
 
     document.addEventListener("DOMContentLoaded", () => {
       const savedToken = sessionStorage.getItem("github_admin_pat");
@@ -383,7 +391,7 @@
 
         loadLicenses(false);
 
-        setInterval(() => {
+        if (!pollTimer) pollTimer = setInterval(() => {
           if (!hasUnsavedChanges && !document.getElementById("protectedContent").classList.contains("hidden")) {
             loadLicenses(true);
           }
@@ -465,6 +473,10 @@
           licenseRegistry = { licenses: [] };
         }
 
+        baseSnapshot = JSON.parse(JSON.stringify(licenseRegistry.licenses));
+        hasUnsavedChanges = false;
+        pendingChangesCount = 0;
+        markDirty(0);
         renderTables();
         if (!silent) showStatus("Registry loaded successfully.", "green");
       } catch (err) {
@@ -488,17 +500,17 @@
         pendingList.forEach((item) => {
           const globalIndex = licenseRegistry.licenses.indexOf(item);
           const machines = item.machineIds || (item.machineId ? [item.machineId] : ["N/A"]);
-          const machineHtml = machines.map(m => `<code>${m}</code>`).join('<br>');
+          const machineHtml = machines.map(m => `<code>${esc(m)}</code>`).join('<br>');
 
           const tr = document.createElement("tr");
           if (item._modified) tr.className = "status-modified";
           tr.innerHTML = `
             <td class="checkbox-col"><input type="checkbox" class="pending-chk" data-index="${globalIndex}"></td>
-            <td>${item.email} ${item._modified ? '<span class="badge-pending-change">Pending Update</span>' : ''}</td>
+            <td>${esc(item.email)} ${item._modified ? '<span class="badge-pending-change">Pending Update</span>' : ''}</td>
             <td>${machineHtml}</td>
             <td>
               <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                <input type="date" id="expiry_${globalIndex}" style="width:130px;" value="${item.expires || getDefaultExpiry()}">
+                <input type="date" id="expiry_${globalIndex}" style="width:130px;" value="${esc(item.expires || getDefaultExpiry())}">
                 <button class="btn-success" onclick="queueApprove(${globalIndex})">Approve</button>
                 <button class="btn-danger" onclick="queueDelete(${globalIndex})">Reject</button>
               </div>
@@ -514,19 +526,19 @@
         activeList.forEach((item) => {
           const globalIndex = licenseRegistry.licenses.indexOf(item);
           const machines = item.machineIds || (item.machineId ? [item.machineId] : ["N/A"]);
-          const machineHtml = machines.map(m => `<code>${m}</code>`).join('<br>');
+          const machineHtml = machines.map(m => `<code>${esc(m)}</code>`).join('<br>');
           const isSuspended = item.status === "suspended";
 
           const tr = document.createElement("tr");
           if (item._modified) tr.className = "status-modified";
           tr.innerHTML = `
             <td class="checkbox-col"><input type="checkbox" class="active-chk" data-index="${globalIndex}"></td>
-            <td>${item.email} ${item._modified ? '<span class="badge-pending-change">Pending Update</span>' : ''}</td>
+            <td>${esc(item.email)} ${item._modified ? '<span class="badge-pending-change">Pending Update</span>' : ''}</td>
             <td>${machineHtml}</td>
             <td>
-              <input type="date" value="${item.expires || ''}" style="width:130px;" onchange="updateExpiryInline(${globalIndex}, this.value)">
+              <input type="date" value="${esc(item.expires || '')}" style="width:130px;" onchange="updateExpiryInline(${globalIndex}, this.value)">
             </td>
-            <td><span class="status-${item.status}">${(item.status || 'unknown').toUpperCase()}</span></td>
+            <td><span class="status-${esc(item.status)}">${esc((item.status || 'unknown').toUpperCase())}</span></td>
             <td>
               <div style="display:flex; gap:6px; flex-wrap:wrap;">
                 <button onclick="queueToggleStatus(${globalIndex})">${isSuspended ? 'Activate' : 'Suspend'}</button>
@@ -630,7 +642,52 @@
       renderTables();
     }
 
-    // Dashboard-side retry loop to handle concurrent collisions gracefully
+    // ---- Conflict-safe commit --------------------------------------------------
+    // The old version wrote its own (possibly stale) local list over the file, so any request that
+    // arrived after the dashboard loaded was silently erased. Now we record only WHAT THE ADMIN
+    // CHANGED (diff vs baseSnapshot) and replay those changes onto the freshest remote copy on
+    // every attempt. New requests that arrived in the meantime are preserved.
+    function computeAdminOps(base, local) {
+      const localByEmail = new Map(local.map(l => [emailKey(l), stripMeta(l)]));
+      const ops = [];
+      for (const b of base) {
+        const key = emailKey(b);
+        const l = localByEmail.get(key);
+        if (!l) { ops.push({ type: "delete", key, base: b }); continue; }
+        if (l.status !== b.status || (l.expires || "") !== (b.expires || "")) {
+          ops.push({ type: "update", key, base: b, status: l.status, expires: l.expires || "" });
+        }
+      }
+      return ops;
+    }
+
+    function machinesOf(l) {
+      return Array.isArray(l.machineIds) ? l.machineIds : (l.machineId ? [l.machineId] : []);
+    }
+
+    function applyAdminOps(remoteList, ops) {
+      const licenses = remoteList.map(l => ({ ...l }));
+      const skipped = [];
+      for (const op of ops) {
+        const idx = licenses.findIndex(l => emailKey(l) === op.key);
+        if (idx === -1) continue; // already gone remotely
+        const current = licenses[idx];
+        const seen = new Set(machinesOf(op.base));
+        const unseen = machinesOf(current).filter(m => !seen.has(m));
+        if (unseen.length) {
+          // A device requested access after this page loaded. Never approve/delete it unseen.
+          skipped.push(current.email);
+          continue;
+        }
+        if (op.type === "delete") licenses.splice(idx, 1);
+        else { current.status = op.status; current.expires = op.expires; }
+      }
+      return { licenses, skipped };
+    }
+
+    function fatalError(message) { const e = new Error(message); e.fatal = true; return e; }
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
     async function confirmAllUpdates() {
       const token = sessionStorage.getItem("github_admin_pat");
       if (!token) {
@@ -639,96 +696,75 @@
         return;
       }
 
+      const ops = computeAdminOps(baseSnapshot, licenseRegistry.licenses);
+      if (ops.length === 0) {
+        showStatus("No changes to save.", "#7f8c8d");
+        await loadLicenses(false);
+        return;
+      }
+
       const confirmBtn = document.getElementById("confirmBtn");
       confirmBtn.disabled = true;
       showStatus("Syncing updates to GitHub...", "#7f8c8d");
 
-      const maxRetries = 3;
-      let success = false;
+      const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+      const MAX_ATTEMPTS = 6;
+      let committed = false;
+      let skipped = [];
+      let lastError = "";
 
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS && !committed; attempt++) {
         try {
-          // 1. Fetch latest file metadata and fresh SHA right before committing
-          const metaRes = await fetch(`${CONFIG.API_URL}?t=${Date.now()}`, {
-            headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
-          });
-          if (!metaRes.ok) throw new Error("Failed to fetch latest file metadata.");
-          
+          // Fresh read right before every write attempt
+          const metaRes = await fetch(`${CONFIG.API_URL}?t=${Date.now()}`, { headers, cache: "no-store" });
+          if (!metaRes.ok) throw new Error(`Could not read the registry (HTTP ${metaRes.status}).`);
           const meta = await metaRes.json();
-          fileSha = meta.sha;
 
-          // Optional safety: Merge any newly arrived pending requests from users 
-          // so your admin commit doesn't accidentally overwrite someone who just submitted a request.
-          const currentRemoteData = JSON.parse(decodeURIComponent(escape(atob(meta.content))));
-          const remoteLicenses = currentRemoteData.licenses || [];
+          let remote;
+          try { remote = JSON.parse(decodeURIComponent(escape(atob(meta.content)))); }
+          catch (e) { throw fatalError("The registry on GitHub is not valid JSON; refusing to overwrite it."); }
+          const remoteList = Array.isArray(remote) ? remote : (remote && remote.licenses);
+          if (!Array.isArray(remoteList)) throw fatalError("The registry on GitHub has an unexpected format; refusing to overwrite it.");
 
-          // Preserve any remote pending items that weren't in your local UI state
-          const sanitizedLocal = licenseRegistry.licenses.map(l => {
-            const clean = { ...l };
-            delete clean._modified;
-            return clean;
-          });
+          const merged = applyAdminOps(remoteList, ops);
+          skipped = merged.skipped;
 
-          // Combine local modifications with any newly added remote pending requests safely
-          const finalLicensesMap = new Map();
-          // First add remote items
-          remoteLicenses.forEach(l => finalLicensesMap.set(l.email, l));
-          // Then apply local admin overrides (approvals, deletions, expiry edits)
-          sanitizedLocal.forEach(l => finalLicensesMap.set(l.email, l));
-
-          // If you deleted someone locally, ensure they stay deleted
-          const localEmails = new Set(sanitizedLocal.map(l => l.email));
-          for (let [email, l] of finalLicensesMap.entries()) {
-            // If it was remote-only and not touched, keep it. But if it was explicitly dropped locally, remove it.
-            // (Our current UI handles deletions via splice, so sanitizedLocal represents the exact desired final list of emails)
-          }
-
-          const payload = { licenses: sanitizedLocal };
-          const updatedContent = btoa(unescape(encodeURIComponent(JSON.stringify(payload, null, 2))));
-
-          // 2. Attempt the PUT commit
           const putRes = await fetch(CONFIG.API_URL, {
             method: "PUT",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/vnd.github+json",
-              "Content-Type": "application/json"
-            },
+            headers: { ...headers, "Content-Type": "application/json" },
             body: JSON.stringify({
-              message: `Batch update license registry (${pendingChangesCount} changes)`,
-              content: updatedContent,
-              sha: fileSha
+              message: `Batch update license registry (${ops.length} change(s))`,
+              content: btoa(unescape(encodeURIComponent(JSON.stringify({ licenses: merged.licenses }, null, 2)))),
+              sha: meta.sha
             })
           });
 
           if (putRes.ok) {
-            const newMeta = await putRes.json();
-            fileSha = newMeta.content.sha;
-            success = true;
-            break; // Success! Exit retry loop
+            committed = true;
+            fileSha = (await putRes.json()).content.sha;
+            break;
           }
-
-          // If 409 conflict due to stale SHA, loop will automatically retry with the fresh SHA
-          if (attempt < maxRetries) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
+          // 409/422 = a user request landed between our read and write -> loop: re-read, re-apply
+          if (putRes.status !== 409 && putRes.status !== 422) {
+            throw fatalError(`GitHub rejected the commit (HTTP ${putRes.status}).`);
           }
+          lastError = "The registry kept changing while saving.";
         } catch (err) {
-          if (attempt === maxRetries) {
-            alert("Sync failed after multiple attempts: " + err.message);
-            confirmBtn.disabled = false;
-            return;
-          }
+          lastError = err.message;
+          if (err.fatal) break;
         }
+        await sleep(250 * attempt + Math.random() * 400);
       }
 
-      if (success) {
-        hasUnsavedChanges = false;
-        pendingChangesCount = 0;
-        markDirty(0);
-        alert("All updates successfully pushed to GitHub!");
+      if (committed) {
+        let note = "All updates pushed to GitHub.";
+        if (skipped.length) {
+          note += "\n\nNot applied, because a new device requested access after you loaded this page. Review and retry:\n" + skipped.join("\n");
+        }
         await loadLicenses(false);
+        alert(note);
       } else {
-        alert("Conflict resolution failed. Please refresh data and try again.");
+        alert(`Sync failed: ${lastError} Your edits are still on screen; click Confirm Updates to retry.`);
         confirmBtn.disabled = false;
       }
     }
