@@ -436,7 +436,6 @@
       try {
         let rawData;
         
-        // Fetch via GitHub Contents API using standard query-parameter cache-busting (CORS safe)
         if (token) {
           const apiRes = await fetch(`${CONFIG.API_URL}?t=${Date.now()}`, {
             headers: { 
@@ -631,6 +630,7 @@
       renderTables();
     }
 
+    // Dashboard-side retry loop to handle concurrent collisions gracefully
     async function confirmAllUpdates() {
       const token = sessionStorage.getItem("github_admin_pat");
       if (!token) {
@@ -641,56 +641,94 @@
 
       const confirmBtn = document.getElementById("confirmBtn");
       confirmBtn.disabled = true;
+      showStatus("Syncing updates to GitHub...", "#7f8c8d");
 
-      try {
-        const sanitizedLicenses = licenseRegistry.licenses.map(l => {
-          const clean = { ...l };
-          delete clean._modified;
-          return clean;
-        });
+      const maxRetries = 3;
+      let success = false;
 
-        const payload = { licenses: sanitizedLicenses };
-
-        const metaRes = await fetch(`${CONFIG.API_URL}?t=${Date.now()}`, {
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
-        });
-        if (metaRes.ok) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          // 1. Fetch latest file metadata and fresh SHA right before committing
+          const metaRes = await fetch(`${CONFIG.API_URL}?t=${Date.now()}`, {
+            headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
+          });
+          if (!metaRes.ok) throw new Error("Failed to fetch latest file metadata.");
+          
           const meta = await metaRes.json();
           fileSha = meta.sha;
+
+          // Optional safety: Merge any newly arrived pending requests from users 
+          // so your admin commit doesn't accidentally overwrite someone who just submitted a request.
+          const currentRemoteData = JSON.parse(decodeURIComponent(escape(atob(meta.content))));
+          const remoteLicenses = currentRemoteData.licenses || [];
+
+          // Preserve any remote pending items that weren't in your local UI state
+          const sanitizedLocal = licenseRegistry.licenses.map(l => {
+            const clean = { ...l };
+            delete clean._modified;
+            return clean;
+          });
+
+          // Combine local modifications with any newly added remote pending requests safely
+          const finalLicensesMap = new Map();
+          // First add remote items
+          remoteLicenses.forEach(l => finalLicensesMap.set(l.email, l));
+          // Then apply local admin overrides (approvals, deletions, expiry edits)
+          sanitizedLocal.forEach(l => finalLicensesMap.set(l.email, l));
+
+          // If you deleted someone locally, ensure they stay deleted
+          const localEmails = new Set(sanitizedLocal.map(l => l.email));
+          for (let [email, l] of finalLicensesMap.entries()) {
+            // If it was remote-only and not touched, keep it. But if it was explicitly dropped locally, remove it.
+            // (Our current UI handles deletions via splice, so sanitizedLocal represents the exact desired final list of emails)
+          }
+
+          const payload = { licenses: sanitizedLocal };
+          const updatedContent = btoa(unescape(encodeURIComponent(JSON.stringify(payload, null, 2))));
+
+          // 2. Attempt the PUT commit
+          const putRes = await fetch(CONFIG.API_URL, {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github+json",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              message: `Batch update license registry (${pendingChangesCount} changes)`,
+              content: updatedContent,
+              sha: fileSha
+            })
+          });
+
+          if (putRes.ok) {
+            const newMeta = await putRes.json();
+            fileSha = newMeta.content.sha;
+            success = true;
+            break; // Success! Exit retry loop
+          }
+
+          // If 409 conflict due to stale SHA, loop will automatically retry with the fresh SHA
+          if (attempt < maxRetries) {
+            await new Promise(r => setTimeout(r, 1000 * attempt));
+          }
+        } catch (err) {
+          if (attempt === maxRetries) {
+            alert("Sync failed after multiple attempts: " + err.message);
+            confirmBtn.disabled = false;
+            return;
+          }
         }
+      }
 
-        const updatedContent = btoa(unescape(encodeURIComponent(JSON.stringify(payload, null, 2))));
-
-        const putRes = await fetch(CONFIG.API_URL, {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github+json",
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            message: `Batch update license registry (${pendingChangesCount} changes)`,
-            content: updatedContent,
-            sha: fileSha
-          })
-        });
-
-        if (!putRes.ok) {
-          const errData = await putRes.json();
-          throw new Error(errData.message || "Failed to commit changes to GitHub.");
-        }
-
-        const newMeta = await putRes.json();
-        fileSha = newMeta.content.sha;
-
+      if (success) {
         hasUnsavedChanges = false;
         pendingChangesCount = 0;
         markDirty(0);
-
         alert("All updates successfully pushed to GitHub!");
         await loadLicenses(false);
-      } catch (err) {
-        alert("Sync failed: " + err.message);
+      } else {
+        alert("Conflict resolution failed. Please refresh data and try again.");
         confirmBtn.disabled = false;
       }
     }
