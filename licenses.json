@@ -25,6 +25,14 @@
       ],
       "expires": "2044-11-06",
       "status": "active"
+    },
+    {
+      "email": "cruzgwynethxyra@gmail.com",
+      "machineIds": [
+        "ID-271CA30D03127042"
+      ],
+      "expires": "2027-11-09",
+      "status": "active"
     }
   ]
 }
