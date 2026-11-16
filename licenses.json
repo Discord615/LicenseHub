@@ -33,6 +33,14 @@
       ],
       "expires": "2027-11-09",
       "status": "active"
+    },
+    {
+      "email": "banthis@banthis.banthis",
+      "machineIds": [
+        "ID-ABCACD985DCEA27B"
+      ],
+      "expires": "2027-11-16",
+      "status": "active"
     }
   ]
 }
