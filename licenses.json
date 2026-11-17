@@ -53,14 +53,6 @@
       ],
       "expires": "2037-11-17",
       "status": "active"
-    },
-    {
-      "email": "jvmediarito@gmail.com",
-      "machineIds": [
-        "ID-82CFFABBFAB40F33"
-      ],
-      "expires": "2024-11-17",
-      "status": "active"
     }
   ]
 }
