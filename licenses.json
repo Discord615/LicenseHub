@@ -61,6 +61,14 @@
       ],
       "expires": "2035-11-18",
       "status": "active"
+    },
+    {
+      "email": "jhuniemarie.juacalla@ortigas-cainta.sti.edu.ph",
+      "machineIds": [
+        "ID-FD61E9B869034919"
+      ],
+      "expires": "2035-11-18",
+      "status": "active"
     }
   ]
 }
