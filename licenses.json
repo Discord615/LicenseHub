@@ -69,6 +69,14 @@
       ],
       "expires": "2035-11-18",
       "status": "active"
+    },
+    {
+      "email": "nicamae.baricar@ortigas-cainta.sti.edu.ph",
+      "machineIds": [
+        "ID-B6162ABB652FA84B"
+      ],
+      "expires": "2035-11-18",
+      "status": "active"
     }
   ]
 }
