@@ -53,6 +53,14 @@
       ],
       "expires": "2037-11-17",
       "status": "active"
+    },
+    {
+      "email": "donalyn.borata@ortigas-cainta.sti.edu.ph",
+      "machineIds": [
+        "ID-3DCD402BBE02D398"
+      ],
+      "expires": "2035-11-18",
+      "status": "active"
     }
   ]
 }
