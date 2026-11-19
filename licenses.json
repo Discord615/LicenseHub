@@ -77,6 +77,14 @@
       ],
       "expires": "2035-11-18",
       "status": "active"
+    },
+    {
+      "email": "tanakamaricris@gmail.com",
+      "machineIds": [
+        "ID-C0546B7D258027D4"
+      ],
+      "expires": "2035-11-19",
+      "status": "active"
     }
   ]
 }
