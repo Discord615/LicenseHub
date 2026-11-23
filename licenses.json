@@ -87,6 +87,14 @@
       ],
       "expires": "2035-11-19",
       "status": "active"
+    },
+    {
+      "email": "akosijason@example.com",
+      "machineIds": [
+        "ID-2E5C48AD8634268D"
+      ],
+      "expires": "2027-11-23",
+      "status": "active"
     }
   ]
 }
