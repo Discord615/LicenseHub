@@ -103,6 +103,14 @@
       ],
       "expires": "2027-11-24",
       "status": "active"
+    },
+    {
+      "email": "hnbmiro.work@gmail.com",
+      "machineIds": [
+        "ID-63EF4552F279D3B0"
+      ],
+      "expires": "2035-11-24",
+      "status": "active"
     }
   ]
 }
