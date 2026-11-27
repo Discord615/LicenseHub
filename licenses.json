@@ -3,7 +3,8 @@
     {
       "email": "julianantoniosison@gmail.com",
       "machineIds": [
-        "ID-E86BD04CED0ED3BF"
+        "ID-E86BD04CED0ED3BF",
+        "ID-6174C2E6A032A5E8"
       ],
       "expires": "2027-11-06",
       "status": "active"
@@ -121,6 +122,14 @@
         "ID-63EF4552F279D3B0"
       ],
       "expires": "2027-11-25",
+      "status": "active"
+    },
+    {
+      "email": "julianantonio.sison@ortigas-cainta.sti.edu.ph",
+      "machineIds": [
+        "ID-6174C2E6A032A5E8"
+      ],
+      "expires": "2027-11-27",
       "status": "active"
     }
   ]
